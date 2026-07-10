@@ -1,51 +1,109 @@
-import { ActivityIndicator, Pressable, StyleSheet, type PressableProps } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { ActivityIndicator, StyleSheet, View, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
 
+import { PressableScale } from '@/components/motion';
 import { ThemedText } from '@/components/themed-text';
-import { Radius, Spacing } from '@/constants/theme';
+import { Radius, Shadow, Spacing } from '@/constants/theme';
+import { useGradients } from '@/hooks/use-gradients';
 import { useTheme } from '@/hooks/use-theme';
+import { haptics } from '@/lib/haptics';
 
-interface ButtonProps extends Omit<PressableProps, 'children'> {
+interface ButtonProps extends Omit<PressableProps, 'children' | 'style'> {
   title: string;
   variant?: 'primary' | 'secondary';
   loading?: boolean;
+  icon?: keyof typeof Ionicons.glyphMap;
+  style?: StyleProp<ViewStyle>;
 }
 
-/** Primary call-to-action button with a secondary variant and loading state. */
-export function Button({ title, variant = 'primary', loading, disabled, style, ...props }: ButtonProps) {
+/**
+ * Primary call-to-action. The primary variant fills with the brand gradient and
+ * casts a soft colored glow; both variants spring on press and fire a haptic.
+ */
+export function Button({
+  title,
+  variant = 'primary',
+  loading,
+  disabled,
+  icon,
+  style,
+  onPress,
+  ...props
+}: ButtonProps) {
   const theme = useTheme();
+  const gradients = useGradients();
   const isPrimary = variant === 'primary';
-  const bg = isPrimary ? theme.tint : theme.backgroundSelected;
-  const fg = isPrimary ? theme.onTint : theme.text;
+  const fg = isPrimary ? '#FFFFFF' : theme.text;
   const isDisabled = disabled || loading;
 
-  return (
-    <Pressable
-      accessibilityRole="button"
-      disabled={isDisabled}
-      style={(state) => [
-        styles.button,
-        { backgroundColor: bg, opacity: isDisabled ? 0.5 : state.pressed ? 0.85 : 1 },
-        typeof style === 'function' ? style(state) : style,
-      ]}
-      {...props}>
+  const inner = (
+    <View style={styles.inner}>
       {loading ? (
         <ActivityIndicator color={fg} />
       ) : (
-        <ThemedText type="smallBold" style={{ color: fg }}>
-          {title}
-        </ThemedText>
+        <>
+          {icon ? <Ionicons name={icon} size={18} color={fg} /> : null}
+          <ThemedText type="smallBold" style={[styles.label, { color: fg }]}>
+            {title}
+          </ThemedText>
+        </>
       )}
-    </Pressable>
+    </View>
+  );
+
+  return (
+    <PressableScale
+      accessibilityRole="button"
+      disabled={isDisabled}
+      scaleTo={0.97}
+      onPress={(e) => {
+        if (isDisabled) return;
+        haptics.light();
+        onPress?.(e);
+      }}
+      style={[styles.button, isDisabled && styles.disabled, style]}
+      {...props}>
+      {isPrimary ? (
+        <LinearGradient
+          colors={gradients.brand}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.fill, !isDisabled && Shadow.glow(theme.tint)]}>
+          {inner}
+        </LinearGradient>
+      ) : (
+        <View style={[styles.fill, { backgroundColor: theme.backgroundSelected, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.border }]}>
+          {inner}
+        </View>
+      )}
+    </PressableScale>
   );
 }
 
 const styles = StyleSheet.create({
   button: {
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.four,
     borderRadius: Radius.md,
+  },
+  disabled: {
+    opacity: 0.5,
+  },
+  fill: {
+    borderRadius: Radius.md,
+    minHeight: 52,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 48,
+    paddingVertical: Spacing.three,
+    paddingHorizontal: Spacing.four,
+    overflow: 'hidden',
+  },
+  inner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+  },
+  label: {
+    fontSize: 15,
   },
 });

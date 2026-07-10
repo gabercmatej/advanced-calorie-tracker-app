@@ -2,6 +2,8 @@ import type { ReactNode } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AmbientBackground } from '@/components/ambient-background';
+import { Appear } from '@/components/motion';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
@@ -17,15 +19,15 @@ interface ScreenProps {
 }
 
 /**
- * Standard screen frame: safe-area aware, centered max-width column, optional
- * scroll and page header. Keeps every screen consistent across phones,
- * tablets, and web.
+ * Standard screen frame: safe-area aware, centered max-width column, ambient
+ * gradient backdrop, and a spring entrance so every screen has motion. Keeps
+ * every screen consistent across phones, tablets, and web.
  */
 export function Screen({ title, subtitle, children, scroll = true, headerRight }: ScreenProps) {
   const insets = useSafeAreaInsets();
 
   const header = title ? (
-    <View style={styles.header}>
+    <Appear style={styles.header}>
       <View style={styles.headerText}>
         <ThemedText type="title" style={styles.title}>
           {title}
@@ -37,7 +39,7 @@ export function Screen({ title, subtitle, children, scroll = true, headerRight }
         ) : null}
       </View>
       {headerRight}
-    </View>
+    </Appear>
   ) : null;
 
   const body = (
@@ -49,6 +51,7 @@ export function Screen({ title, subtitle, children, scroll = true, headerRight }
 
   return (
     <ThemedView style={styles.flex}>
+      <AmbientBackground />
       {scroll ? (
         <ScrollView
           contentContainerStyle={[
@@ -94,8 +97,9 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
   },
   title: {
-    fontSize: 34,
-    lineHeight: 40,
+    fontSize: 36,
+    lineHeight: 42,
+    letterSpacing: -0.5,
     // Serif display face for the main page headings (Home / Progress / Profile).
     fontFamily: Fonts?.serif,
   },

@@ -1,9 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { StyleSheet, View } from 'react-native';
 
+import { PressableScale } from '@/components/motion';
 import { ThemedText } from '@/components/themed-text';
-import { Radius, Spacing } from '@/constants/theme';
+import { Radius, Shadow, Spacing } from '@/constants/theme';
+import { useGradients } from '@/hooks/use-gradients';
 import { useTheme } from '@/hooks/use-theme';
+import { haptics } from '@/lib/haptics';
 
 export interface Option<T extends string> {
   value: T;
@@ -20,52 +24,62 @@ interface OptionCardsProps<T extends string> {
 
 /**
  * A vertical list of large, tappable selection cards — the primary onboarding
- * input for single-choice questions (sex, goal, diet, workout volume).
+ * input for single-choice questions (sex, goal, diet, workout volume). The
+ * selected card fills with the brand gradient and glows; all cards spring on tap.
  */
 export function OptionCards<T extends string>({ options, value, onChange }: OptionCardsProps<T>) {
   const theme = useTheme();
+  const gradients = useGradients();
 
   return (
     <View style={styles.list}>
       {options.map((opt) => {
         const selected = opt.value === value;
         return (
-          <Pressable
+          <PressableScale
             key={opt.value}
-            onPress={() => onChange(opt.value)}
+            onPress={() => {
+              haptics.selection();
+              onChange(opt.value);
+            }}
+            scaleTo={0.97}
             accessibilityRole="button"
             accessibilityState={{ selected }}
-            style={({ pressed }) => [
+            style={[
               styles.card,
               {
-                backgroundColor: selected ? theme.tint : theme.backgroundElement,
-                borderColor: selected ? theme.tint : theme.border,
-                opacity: pressed ? 0.85 : 1,
+                backgroundColor: selected ? 'transparent' : theme.backgroundElement,
+                borderColor: selected ? 'transparent' : theme.border,
               },
+              selected ? Shadow.glow(theme.tint) : Shadow.card,
             ]}>
-            {opt.icon ? (
-              <Ionicons
-                name={opt.icon}
-                size={22}
-                color={selected ? theme.onTint : theme.textSecondary}
+            {selected ? (
+              <LinearGradient
+                colors={gradients.brand}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
               />
             ) : null}
+            {opt.icon ? (
+              <View style={[styles.iconWrap, { backgroundColor: selected ? 'rgba(255,255,255,0.18)' : theme.tintSoft }]}>
+                <Ionicons name={opt.icon} size={20} color={selected ? '#FFFFFF' : theme.tint} />
+              </View>
+            ) : null}
             <View style={styles.text}>
-              <ThemedText
-                type="smallBold"
-                style={{ color: selected ? theme.onTint : theme.text, fontSize: 16 }}>
+              <ThemedText type="smallBold" style={{ color: selected ? '#FFFFFF' : theme.text, fontSize: 16 }}>
                 {opt.label}
               </ThemedText>
               {opt.hint ? (
                 <ThemedText
                   type="small"
-                  style={{ color: selected ? theme.onTint : theme.textSecondary, opacity: selected ? 0.85 : 1 }}>
+                  style={{ color: selected ? '#FFFFFF' : theme.textSecondary, opacity: selected ? 0.9 : 1 }}>
                   {opt.hint}
                 </ThemedText>
               ) : null}
             </View>
-            {selected ? <Ionicons name="checkmark-circle" size={22} color={theme.onTint} /> : null}
-          </Pressable>
+            {selected ? <Ionicons name="checkmark-circle" size={24} color="#FFFFFF" /> : null}
+          </PressableScale>
         );
       })}
     </View>
@@ -81,9 +95,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.three,
     padding: Spacing.three,
-    minHeight: 60,
-    borderRadius: Radius.md,
+    minHeight: 64,
+    borderRadius: Radius.lg,
     borderWidth: 1.5,
+    overflow: 'hidden',
+  },
+  iconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: Radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   text: {
     flex: 1,

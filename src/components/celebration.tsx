@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, {
@@ -12,56 +13,78 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { Confetti } from '@/components/confetti';
 import { ThemedText } from '@/components/themed-text';
-import { Radius, Spacing } from '@/constants/theme';
+import { Radius, Shadow, Spacing } from '@/constants/theme';
+import { useGradients } from '@/hooks/use-gradients';
 import { useTheme } from '@/hooks/use-theme';
 
 interface CelebrationProps {
   /** Message shown under the checkmark, e.g. "+320 kcal logged". */
   message: string;
+  /** Rain confetti behind the badge (streak milestones). */
+  confetti?: boolean;
   /** Called once the animation has finished so the parent can unmount it. */
   onDone: () => void;
 }
 
 /**
- * A rewarding full-screen flourish shown after logging a meal: a dimmed
- * backdrop with a springy checkmark badge that pops in and fades out. Pure
- * reanimated so it runs on the UI thread across all platforms.
+ * A rewarding full-screen flourish shown after logging: a dimmed backdrop with
+ * a springy gradient checkmark badge that pops in and fades out, plus optional
+ * confetti for milestones. Pure reanimated so it runs across all platforms.
  */
-export function Celebration({ message, onDone }: CelebrationProps) {
+export function Celebration({ message, confetti, onDone }: CelebrationProps) {
   const theme = useTheme();
+  const gradients = useGradients();
   const scale = useSharedValue(0);
   const backdrop = useSharedValue(0);
+  const check = useSharedValue(0);
+
+  const hold = confetti ? 900 : 300;
 
   useEffect(() => {
     backdrop.value = withTiming(1, { duration: 130 });
+    check.value = withDelay(160, withSpring(1, { damping: 11, stiffness: 200 }));
     scale.value = withSequence(
       withSpring(1, { damping: 12, stiffness: 190 }),
       withDelay(
-        300,
-        withTiming(0, { duration: 190, easing: Easing.in(Easing.cubic) }, (finished) => {
+        hold,
+        withTiming(0, { duration: 220, easing: Easing.in(Easing.cubic) }, (finished) => {
           if (finished) runOnJS(onDone)();
         }),
       ),
     );
-    backdrop.value = withDelay(560, withTiming(0, { duration: 190 }));
-  }, [backdrop, scale, onDone]);
+    backdrop.value = withDelay(hold + 300, withTiming(0, { duration: 220 }));
+  }, [backdrop, scale, check, hold, onDone]);
 
-  const backdropStyle = useAnimatedStyle(() => ({ opacity: backdrop.value * 0.55 }));
+  const backdropStyle = useAnimatedStyle(() => ({ opacity: backdrop.value * 0.6 }));
   const badgeStyle = useAnimatedStyle(() => ({
     opacity: scale.value,
     transform: [{ scale: scale.value }],
+  }));
+  const checkStyle = useAnimatedStyle(() => ({
+    opacity: check.value,
+    transform: [{ scale: 0.6 + check.value * 0.4 }],
   }));
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
       <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]} />
+      {confetti ? <Confetti /> : null}
       <View style={styles.center}>
-        <Animated.View style={[styles.badge, { backgroundColor: theme.tint }, badgeStyle]}>
-          <Ionicons name="checkmark" size={56} color={theme.onTint} />
-          <ThemedText type="smallBold" style={[styles.message, { color: theme.onTint }]}>
-            {message}
-          </ThemedText>
+        <Animated.View style={[badgeStyle, Shadow.glow(theme.tint)]}>
+          <LinearGradient
+            colors={gradients.brand}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.badge}>
+            <Animated.View style={checkStyle}>
+              <Ionicons name="checkmark-circle" size={56} color="#FFFFFF" />
+            </Animated.View>
+            <ThemedText type="smallBold" style={styles.message}>
+              {message}
+            </ThemedText>
+          </LinearGradient>
         </Animated.View>
       </View>
     </View>
@@ -87,10 +110,11 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     paddingVertical: Spacing.five,
     paddingHorizontal: Spacing.five,
-    borderRadius: Radius.lg,
-    minWidth: 180,
+    borderRadius: Radius.xl,
+    minWidth: 190,
   },
   message: {
     textAlign: 'center',
+    color: '#FFFFFF',
   },
 });

@@ -3,11 +3,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { LinearGradient } from 'expo-linear-gradient';
+
+import { AmbientBackground } from '@/components/ambient-background';
 import { Button } from '@/components/button';
+import { CalorieRing } from '@/components/calorie-ring';
 import { Card } from '@/components/card';
 import { DateField } from '@/components/date-field';
 import { Field } from '@/components/field';
 import { MacroRow } from '@/components/macro-row';
+import { Appear, CountUp, Floating } from '@/components/motion';
 import { OptionCards } from '@/components/option-card';
 import { ProgressBar } from '@/components/progress-bar';
 import { Segmented } from '@/components/segmented';
@@ -18,6 +23,7 @@ import { GoogleButton } from '@/app/(auth)/sign-in';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { useDiary } from '@/context/DiaryContext';
+import { useGradients } from '@/hooks/use-gradients';
 import { useTheme } from '@/hooks/use-theme';
 import {
   addDays,
@@ -202,6 +208,7 @@ export default function OnboardingScreen() {
 
   return (
     <ThemedView style={styles.flex}>
+      <AmbientBackground />
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         {/* Top bar: back + progress */}
         <View style={[styles.topBar, { paddingTop: insets.top + Spacing.two }]}>
@@ -225,6 +232,7 @@ export default function OnboardingScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
           <View style={styles.column}>
+            <Appear key={stepId} distance={20}>
             <StepBody
               stepId={stepId}
               theme={theme}
@@ -275,6 +283,7 @@ export default function OnboardingScreen() {
               onGoogle={() => finish('google')}
               onEmail={() => finish('email')}
             />
+            </Appear>
           </View>
         </ScrollView>
 
@@ -614,16 +623,19 @@ function CalculatingStep({ onDone }: { onDone: () => void }) {
     return () => clearInterval(id);
   }, [onDone]);
 
+  const gradients = useGradients();
   const messages = ['Analyzing your metrics', 'Estimating your metabolism', 'Building your plan'];
   const msg = messages[Math.min(messages.length - 1, Math.floor(pct * messages.length))];
 
   return (
     <View style={styles.calc}>
-      <ThemedText style={styles.calcPct}>{Math.round(pct * 100)}%</ThemedText>
-      <View style={styles.calcBar}>
-        <ProgressBar value={pct} height={10} />
-      </View>
-      <ThemedText type="default" themeColor="textSecondary">
+      <CalorieRing value={pct} gradient={gradients.brand} size={200} thickness={18} animate={false}>
+        <Floating amplitude={4}>
+          <Ionicons name="sparkles" size={30} color={gradients.brand[1]} />
+        </Floating>
+        <ThemedText style={styles.calcPct}>{Math.round(pct * 100)}%</ThemedText>
+      </CalorieRing>
+      <ThemedText type="default" themeColor="textSecondary" style={styles.center}>
         {msg}…
       </ThemedText>
     </View>
@@ -639,33 +651,42 @@ function PlanStep({
   metrics: UserMetrics | null;
   weightUnit: 'kg' | 'lbs';
 }) {
-  const theme = useTheme();
+  const gradients = useGradients();
   if (!goals) return null;
   return (
     <>
       <Header title="Your daily plan is ready 🎉" subtitle="You can fine-tune this anytime in your profile." />
-      <Card style={styles.planCard}>
-        <View style={[styles.planBadge, { backgroundColor: theme.backgroundSelected }]}>
-          <Ionicons name="flame" size={16} color={theme.tint} />
-          <ThemedText type="small" themeColor="textSecondary">
-            Recommended
-          </ThemedText>
-        </View>
-        <View style={styles.planHeadline}>
-          <ThemedText style={styles.planNumber} themeColor="tint">
-            {goals.calories}
-          </ThemedText>
-          <ThemedText type="default" themeColor="textSecondary">
-            calories per day
-          </ThemedText>
-        </View>
-        <MacroRow consumed={{ protein: 0, carbs: 0, fat: 0 }} goal={goals.macros} />
-        {metrics?.targetDate && (
-          <ThemedText type="small" themeColor="textSecondary" style={styles.center}>
-            On track for {Math.round(metrics.targetWeightKg && weightUnit === 'lbs' ? kgToLb(metrics.targetWeightKg) : metrics.targetWeightKg ?? 0)} {weightUnit} by {relativeDayLabel(metrics.targetDate)}.
-          </ThemedText>
-        )}
-      </Card>
+      <Appear delay={80}>
+        <Card variant="raised" style={styles.planCard}>
+          <LinearGradient
+            colors={gradients.brand}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.planBadge}>
+            <Ionicons name="flame" size={14} color="#FFFFFF" />
+            <ThemedText type="small" style={{ color: '#FFFFFF' }}>
+              Recommended
+            </ThemedText>
+          </LinearGradient>
+          <View style={styles.planHeadline}>
+            <View style={styles.planNumberRow}>
+              <CountUp value={goals.calories} duration={1100} style={styles.planNumber} themeColor="tint" />
+            </View>
+            <ThemedText type="default" themeColor="textSecondary">
+              calories per day
+            </ThemedText>
+          </View>
+          <MacroRow consumed={{ protein: 0, carbs: 0, fat: 0 }} goal={goals.macros} />
+          {metrics?.targetDate && (
+            <View style={[styles.planTarget, { borderTopColor: gradients.brand[0] + '33' }]}>
+              <Ionicons name="trophy" size={16} color={gradients.brand[1]} />
+              <ThemedText type="small" themeColor="textSecondary" style={styles.planTargetText}>
+                On track for {Math.round(metrics.targetWeightKg && weightUnit === 'lbs' ? kgToLb(metrics.targetWeightKg) : metrics.targetWeightKg ?? 0)} {weightUnit} by {relativeDayLabel(metrics.targetDate)}.
+              </ThemedText>
+            </View>
+          )}
+        </Card>
+      </Appear>
     </>
   );
 }
@@ -799,9 +820,10 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.six,
   },
   calcPct: {
-    fontSize: 56,
-    lineHeight: 60,
+    fontSize: 36,
+    lineHeight: 40,
     fontWeight: '800',
+    marginTop: Spacing.one,
   },
   calcBar: {
     width: '100%',
@@ -815,17 +837,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.half,
     paddingVertical: Spacing.half,
-    paddingHorizontal: Spacing.two,
+    paddingHorizontal: Spacing.three,
     borderRadius: Radius.full,
   },
   planHeadline: {
     alignItems: 'center',
     gap: Spacing.half,
   },
+  planNumberRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
   planNumber: {
-    fontSize: 56,
-    lineHeight: 60,
+    fontSize: 60,
+    lineHeight: 64,
     fontWeight: '800',
+    letterSpacing: -1.5,
+  },
+  planTarget: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: Spacing.three,
+    width: '100%',
+  },
+  planTargetText: {
+    flex: 1,
   },
   center: {
     textAlign: 'center',

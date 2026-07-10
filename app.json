@@ -40,6 +40,13 @@
           "cameraPermission": "CalAI uses the camera to take photos of your meals for calorie estimation."
         }
       ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "CalAI uses the camera to scan product barcodes for accurate nutrition.",
+          "barcodeScannerEnabled": true
+        }
+      ],
       "expo-notifications"
     ],
     "experiments": {

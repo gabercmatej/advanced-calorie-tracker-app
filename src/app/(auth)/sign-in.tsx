@@ -4,8 +4,10 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AmbientBackground } from '@/components/ambient-background';
 import { Button } from '@/components/button';
 import { Field } from '@/components/field';
+import { Appear, PressableScale } from '@/components/motion';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
@@ -43,8 +45,9 @@ export default function SignInScreen() {
 
   return (
     <ThemedView style={styles.flex}>
+      <AmbientBackground />
       <View style={[styles.content, { paddingTop: insets.top + Spacing.two }]}>
-        <View style={styles.column}>
+        <Appear style={styles.column}>
           <Pressable onPress={() => router.back()} hitSlop={10} style={styles.back}>
             <Ionicons name="chevron-back" size={26} color={theme.text} />
           </Pressable>
@@ -96,8 +99,8 @@ export default function SignInScreen() {
               {error}
             </ThemedText>
           )}
-          <Button title="Continue" disabled={!canSubmit} loading={busy} onPress={onSubmit} />
-        </View>
+          <Button title="Continue" icon="arrow-forward" disabled={!canSubmit} loading={busy} onPress={onSubmit} />
+        </Appear>
       </View>
     </ThemedView>
   );
@@ -107,18 +110,16 @@ export default function SignInScreen() {
 export function GoogleButton({ onPress }: { onPress: () => void }) {
   const theme = useTheme();
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
+      scaleTo={0.97}
       accessibilityRole="button"
-      style={({ pressed }) => [
-        styles.google,
-        { backgroundColor: theme.backgroundElement, borderColor: theme.border, opacity: pressed ? 0.85 : 1 },
-      ]}>
+      style={[styles.google, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
       <Ionicons name="logo-google" size={20} color={theme.text} />
       <ThemedText type="smallBold" style={styles.googleText}>
         Continue with Google
       </ThemedText>
-    </Pressable>
+    </PressableScale>
   );
 }
 

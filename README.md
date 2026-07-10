@@ -6,7 +6,7 @@ Runs on **iOS, Android, and web** from a single codebase.
 ## Get started
 
 ```bash
-npm install        # already done during scaffolding
+npm install
 npx expo start     # then press i (iOS), a (Android), or w (web)
 ```
 
@@ -20,59 +20,79 @@ npm run lint       # expo lint
 npx tsc --noEmit   # type-check
 ```
 
+The app runs out of the box with **no configuration** — food estimation falls
+back to an offline heuristic and data is stored locally. Add an Anthropic key
+and a Supabase project (below) to unlock real AI estimates and cloud sync.
+
 ## What's in the box
 
-- **Expo Router** file-based routing with a bottom tab bar (Today · Log · Insights · Profile).
+- **Expo Router** file-based routing with a bottom tab bar (Home · Progress · Profile) plus modal screens for logging.
+- **Onboarding wizard** that collects your stats and computes a personalized calorie/macro plan (Mifflin-St Jeor BMR × activity, adjusted toward a target weight/date).
+- **AI food logging** — snap a photo and/or describe a meal and get a calorie + macro estimate from Claude's vision model, with an offline keyword heuristic as a no-key fallback.
+- **Barcode scanning** — scan a packaged product's barcode for exact, label-sourced nutrition (via the free [Open Food Facts](https://world.openfoodfacts.org) database). More accurate than a photo guess for anything with a label.
+- **Weight tracking** with an SVG trend chart and projection toward your goal.
+- **Accounts & cloud sync** — optional Supabase email/password auth; meals, weights, and compressed meal photos sync per-user across devices (local-only until configured).
 - **Light & dark mode** via design tokens in [`src/constants/theme.ts`](src/constants/theme.ts).
-- **Local persistence** — logged meals and goals survive restarts (AsyncStorage).
-- **AI food estimation** — describe a meal in plain text and get a calorie/macro estimate.
-- **Zero native config needed** to start — works in Expo Go and the browser.
+- **Streak reminders** — optional local notifications (no-ops on web).
 
 ## Project structure
 
 ```
 src/
 ├── app/                      # Routes (Expo Router)
-│   ├── _layout.tsx           # Root: providers, splash, stack
+│   ├── _layout.tsx           # Root: providers, splash, auth-gated stack
 │   ├── +not-found.tsx        # 404 route
-│   └── (tabs)/               # Bottom tab group
-│       ├── _layout.tsx       # Tab bar definition
-│       ├── index.tsx         # Today — dashboard & meal list
-│       ├── log.tsx           # Log — AI-assisted food entry
-│       ├── insights.tsx      # Insights — 7-day trends
+│   ├── add.tsx               # Log food — photo / description / barcode
+│   ├── log-weight.tsx        # Log a body-weight measurement
+│   ├── entry/[id].tsx        # Edit or delete a logged food
+│   ├── (auth)/               # Signed-out group: welcome → onboarding → sign-in
+│   └── (tabs)/               # Signed-in bottom tabs
+│       ├── index.tsx         # Home — today's dashboard & meal list
+│       ├── progress.tsx      # Progress — weight chart, streak, calendar
 │       └── profile.tsx       # Profile — goals & preferences
-├── components/               # Reusable UI (Card, Button, Screen, ProgressBar…)
-├── context/DiaryContext.tsx  # App state + persistence
+├── components/               # Reusable UI (Card, Button, Field, CalorieRing, WeightChart, BarcodeScanner…)
+├── context/                  # App state: Auth, Diary, Theme, Celebration
 ├── lib/
-│   ├── ai.ts                 # 👉 Food estimation — swap for a real model backend
-│   ├── nutrition.ts          # Calorie/macro math helpers
+│   ├── ai.ts                 # Claude vision food estimation (+ offline fallback)
+│   ├── barcode.ts            # Barcode → nutrition via Open Food Facts
+│   ├── nutrition.ts          # Calorie/macro/BMR math + date & unit helpers
+│   ├── image.ts              # Camera/library photo picking + compression
+│   ├── supabase.ts           # Supabase client (cloud sync)
+│   ├── remote.ts             # Cloud persistence & photo upload
+│   ├── notifications.ts      # Local streak reminders
 │   └── storage.ts            # Typed AsyncStorage wrapper
 ├── constants/theme.ts        # Colors, spacing, radii, fonts
-├── hooks/                    # useTheme, useColorScheme
-└── types/index.ts            # Domain types (FoodEntry, Goals, …)
+├── hooks/                    # useTheme, useColorScheme, useEntryPhoto
+└── types/index.ts            # Domain types (FoodEntry, Goals, Profile…)
 ```
 
-## Wiring up real AI
+## Configuration
 
-The estimator in [`src/lib/ai.ts`](src/lib/ai.ts) ships as an offline heuristic so the
-app runs with no setup. To use a real model, replace the body of `estimateFood()`
-with a call to a backend you control:
+Both are optional — the app works local-only without them. Copy your keys into
+`.env` (gitignored) and restart the dev server.
 
-```ts
-const res = await fetch(`${API_BASE}/estimate`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ description }),
-});
-return (await res.json()) as FoodEstimate;
+### AI food estimation (Anthropic)
+
+```
+EXPO_PUBLIC_ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-Have that server prompt an LLM to return strict JSON matching `FoodEstimate`.
-**Never ship a provider API key in the app** — always proxy through your server.
+[`src/lib/ai.ts`](src/lib/ai.ts) calls Claude Haiku (the cheapest vision model)
+for photo/text estimates. Without a key it uses an offline keyword heuristic, so
+the logger always works.
 
-## Next steps
+> ⚠️ **`EXPO_PUBLIC_` variables are bundled into the client.** This is fine for
+> local/personal use, but a public release must proxy the model call through a
+> server you control rather than shipping the key. Barcode scanning needs no key.
 
-- Add a barcode / photo capture flow (`expo-camera`) to the Log screen.
-- Persist to a backend so data syncs across devices.
-- Add auth (`expo-auth-session`) and per-user goals.
-- Replace the bar chart in Insights with `react-native-svg` for richer visuals.
+### Cloud sync & accounts (Supabase)
+
+```
+EXPO_PUBLIC_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=YOUR-ANON-PUBLIC-KEY
+```
+
+Run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL editor to
+create the tables, row-level security, and the private meal-photo bucket. Full
+walkthrough in [`supabase/SETUP.md`](supabase/SETUP.md). The anon key is safe to
+ship — RLS is what protects each user's data.

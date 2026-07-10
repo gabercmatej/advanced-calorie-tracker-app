@@ -47,6 +47,16 @@ export function progress(consumed: number, goal: number): number {
   return Math.min(1, consumed / goal);
 }
 
+/**
+ * Whether a streak length is a "milestone" worth a confetti celebration —
+ * the first few landmarks, then every full month.
+ */
+export function isStreakMilestone(days: number): boolean {
+  if (days <= 0) return false;
+  if ([3, 7, 14, 21, 50, 100].includes(days)) return true;
+  return days % 30 === 0;
+}
+
 // ---------------------------------------------------------------------------
 // Units & conversions
 // ---------------------------------------------------------------------------

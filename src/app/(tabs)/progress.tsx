@@ -1,30 +1,36 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/button';
-import { Card } from '@/components/card';
+import { GradientCard } from '@/components/gradient-card';
+import { Appear, CountUp, PressableScale } from '@/components/motion';
 import { ProgressBar } from '@/components/progress-bar';
 import { Screen } from '@/components/screen';
 import { ThemedText } from '@/components/themed-text';
 import { WeightChart } from '@/components/weight-chart';
-import { Radius, Spacing } from '@/constants/theme';
+import { Radius, Shadow, Spacing } from '@/constants/theme';
 import { useDiary } from '@/context/DiaryContext';
+import { useGradients } from '@/hooks/use-gradients';
 import { useTheme } from '@/hooks/use-theme';
+import { haptics } from '@/lib/haptics';
 import {
-  formatWeight,
   fromDateKey,
+  kgToLb,
   latestWeight,
   relativeDayLabel,
   toDateKey,
   weightProjection,
 } from '@/lib/nutrition';
+import type { UnitSystem } from '@/types';
 
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 export default function ProgressScreen() {
   const theme = useTheme();
+  const gradients = useGradients();
   const router = useRouter();
   const { profile, weights, streak, recommendation } = useDiary();
   const units = profile.units;
@@ -34,13 +40,11 @@ export default function ProgressScreen() {
   const sorted = [...weights].sort((a, b) => (a.date < b.date ? -1 : 1));
   const start = sorted[0];
 
-  // Target trajectory line, if the user set a goal weight + date.
   const projection =
     metrics?.targetWeightKg != null && metrics.targetDate && start
       ? weightProjection(start.weightKg, start.date, metrics.targetWeightKg, metrics.targetDate)
       : [];
 
-  // Progress toward goal weight.
   let goalPct: number | null = null;
   if (metrics?.targetWeightKg != null && start && latest) {
     const span = start.weightKg - metrics.targetWeightKg;
@@ -49,52 +53,76 @@ export default function ProgressScreen() {
     }
   }
 
+  const unitLabel = units === 'imperial' ? 'lb' : 'kg';
+  const disp = (kg: number) => (units === 'imperial' ? kgToLb(kg) : kg);
+
   return (
     <Screen
       title="Progress"
       subtitle="Your weight and nutrition trends"
       headerRight={streak > 0 ? <StreakBadge days={streak} /> : undefined}>
       {/* Weight */}
-      <Card>
-        <View style={styles.weightHead}>
-          <View>
-            <ThemedText type="small" themeColor="textSecondary">
-              Current weight
-            </ThemedText>
-            <ThemedText style={styles.bigWeight}>
-              {latest ? formatWeight(latest.weightKg, units) : '—'}
-            </ThemedText>
-            {metrics?.targetWeightKg != null && (
+      <Appear delay={80}>
+        <GradientCard variant="raised">
+          <View style={styles.weightHead}>
+            <View>
               <ThemedText type="small" themeColor="textSecondary">
-                Goal {formatWeight(metrics.targetWeightKg, units)}
+                Current weight
               </ThemedText>
-            )}
-          </View>
-          <Button title="Log weight" variant="secondary" onPress={() => router.push('/log-weight')} style={styles.logBtn} />
-        </View>
-
-        {goalPct !== null && (
-          <View style={styles.goalProgress}>
-            <View style={styles.goalLabels}>
-              <ThemedText type="small" themeColor="textSecondary">
-                Goal progress
-              </ThemedText>
-              <ThemedText type="smallBold" style={{ color: theme.tint }}>
-                {Math.round(goalPct * 100)}%
-              </ThemedText>
+              {latest ? (
+                <View style={styles.bigWeightRow}>
+                  <CountUp
+                    value={disp(latest.weightKg)}
+                    decimals={1}
+                    style={styles.bigWeight}
+                    duration={900}
+                  />
+                  <ThemedText type="smallBold" themeColor="textSecondary" style={styles.unit}>
+                    {unitLabel}
+                  </ThemedText>
+                </View>
+              ) : (
+                <ThemedText style={styles.bigWeight}>—</ThemedText>
+              )}
+              {metrics?.targetWeightKg != null && (
+                <View style={styles.goalChip}>
+                  <Ionicons name="flag" size={12} color={theme.tint} />
+                  <ThemedText type="small" themeColor="textSecondary">
+                    Goal {disp(metrics.targetWeightKg).toFixed(1)} {unitLabel}
+                  </ThemedText>
+                </View>
+              )}
             </View>
-            <ProgressBar value={goalPct} height={8} />
+            <Button title="Log weight" icon="add" variant="secondary" onPress={() => router.push('/log-weight')} style={styles.logBtn} />
           </View>
-        )}
 
-        <WeightChart actual={weights} projection={projection} units={units} />
-      </Card>
+          {goalPct !== null && (
+            <View style={styles.goalProgress}>
+              <View style={styles.goalLabels}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  Goal progress
+                </ThemedText>
+                <CountUp value={Math.round(goalPct * 100)} suffix="%" type="smallBold" style={{ color: theme.tint }} />
+              </View>
+              <ProgressBar value={goalPct} gradient={gradients.brand} height={12} />
+            </View>
+          )}
+
+          <WeightChart actual={weights} projection={projection} units={units} />
+        </GradientCard>
+      </Appear>
 
       {/* Adaptive, muscle-sparing calorie plan (cutters only) */}
-      {recommendation && <AdaptiveGoalCard plan={recommendation} units={units} />}
+      {recommendation && (
+        <Appear delay={140}>
+          <AdaptiveGoalCard plan={recommendation} units={units} />
+        </Appear>
+      )}
 
       {/* Nutrition history calendar */}
-      <CalendarCard />
+      <Appear delay={200}>
+        <CalendarCard />
+      </Appear>
     </Screen>
   );
 }
@@ -104,11 +132,12 @@ function AdaptiveGoalCard({
   units,
 }: {
   plan: NonNullable<ReturnType<typeof useDiary>['recommendation']>;
-  units: 'metric' | 'imperial';
+  units: UnitSystem;
 }) {
+  const gradients = useGradients();
   const theme = useTheme();
   const adaptive = plan.basis === 'adaptive';
-  const rate = formatWeight(plan.targetWeeklyLossKg, units);
+  const rate = units === 'imperial' ? `${kgToLb(plan.targetWeeklyLossKg).toFixed(1)} lb` : `${plan.targetWeeklyLossKg.toFixed(2)} kg`;
   return (
     <>
       <View style={styles.sectionHeader}>
@@ -116,17 +145,21 @@ function AdaptiveGoalCard({
           Adaptive plan
         </ThemedText>
       </View>
-      <Card style={styles.planCard}>
+      <GradientCard>
         <View style={styles.planHead}>
-          <View style={[styles.planIcon, { backgroundColor: theme.backgroundSelected }]}>
-            <Ionicons name="sparkles" size={18} color={theme.tint} />
-          </View>
+          <LinearGradient
+            colors={gradients.brand}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[styles.planIcon, Shadow.glow(theme.tint)]}>
+            <Ionicons name="sparkles" size={20} color="#FFFFFF" />
+          </LinearGradient>
           <View style={styles.planHeadText}>
-            <ThemedText type="smallBold">{plan.calories} kcal / day</ThemedText>
+            <ThemedText type="smallBold" style={styles.planCalories}>
+              {plan.calories} kcal / day
+            </ThemedText>
             <ThemedText type="small" themeColor="textSecondary">
-              {adaptive
-                ? `Tuned to your last ${plan.intakeDays} days`
-                : 'Starting estimate — refines as you log'}
+              {adaptive ? `Tuned to your last ${plan.intakeDays} days` : 'Starting estimate — refines as you log'}
             </ThemedText>
           </View>
         </View>
@@ -136,7 +169,7 @@ function AdaptiveGoalCard({
             ? `Your maintenance looks like ~${plan.observedTdee} kcal. We target ${rate}/week — a muscle-sparing pace that eases off as you get lighter. Hit ${plan.proteinG} g protein to hold onto muscle.`
             : `Aiming for ${rate}/week to protect muscle, with ${plan.proteinG} g protein daily. Log meals and weigh in for ~2 weeks and this target locks onto your real results.`}
         </ThemedText>
-      </Card>
+      </GradientCard>
     </>
   );
 }
@@ -157,6 +190,7 @@ function CalendarCard() {
   const monthLabel = monthAnchor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 
   function shiftMonth(delta: number) {
+    haptics.selection();
     setMonthAnchor((m) => new Date(m.getFullYear(), m.getMonth() + delta, 1));
   }
 
@@ -174,15 +208,15 @@ function CalendarCard() {
           Nutrition history
         </ThemedText>
       </View>
-      <Card>
+      <GradientCard>
         <View style={styles.monthNav}>
-          <Pressable onPress={() => shiftMonth(-1)} hitSlop={10} accessibilityLabel="Previous month">
-            <Ionicons name="chevron-back" size={22} color={theme.text} />
-          </Pressable>
-          <ThemedText type="smallBold">{monthLabel}</ThemedText>
-          <Pressable onPress={() => shiftMonth(1)} hitSlop={10} accessibilityLabel="Next month">
-            <Ionicons name="chevron-forward" size={22} color={theme.text} />
-          </Pressable>
+          <PressableScale onPress={() => shiftMonth(-1)} scaleTo={0.85} style={[styles.navBtn, { backgroundColor: theme.tintSoft }]} accessibilityLabel="Previous month">
+            <Ionicons name="chevron-back" size={20} color={theme.tint} />
+          </PressableScale>
+          <ThemedText type="smallBold" style={styles.monthLabel}>{monthLabel}</ThemedText>
+          <PressableScale onPress={() => shiftMonth(1)} scaleTo={0.85} style={[styles.navBtn, { backgroundColor: theme.tintSoft }]} accessibilityLabel="Next month">
+            <Ionicons name="chevron-forward" size={20} color={theme.tint} />
+          </PressableScale>
         </View>
 
         <View style={styles.weekHeader}>
@@ -203,11 +237,13 @@ function CalendarCard() {
             const isToday = key === today;
             const isFuture = key > today;
             return (
-              <Pressable
+              <PressableScale
                 key={key}
+                scaleTo={0.85}
                 style={styles.cell}
                 disabled={isFuture}
                 onPress={() => {
+                  haptics.selection();
                   setSelectedDate(key);
                   router.navigate('/');
                 }}
@@ -215,7 +251,7 @@ function CalendarCard() {
                 <View
                   style={[
                     styles.dayCell,
-                    isToday ? { borderColor: theme.tint, borderWidth: 1.5 } : null,
+                    isToday ? { borderColor: theme.tint, borderWidth: 1.5, backgroundColor: theme.tintSoft } : null,
                   ]}>
                   <ThemedText
                     type={isToday ? 'smallBold' : 'small'}
@@ -227,7 +263,7 @@ function CalendarCard() {
                     {hasWeight ? <View style={[styles.dot, { backgroundColor: theme.streak }]} /> : null}
                   </View>
                 </View>
-              </Pressable>
+              </PressableScale>
             );
           })}
         </View>
@@ -250,18 +286,25 @@ function CalendarCard() {
         <ThemedText type="small" themeColor="textSecondary" style={styles.hint}>
           Tap any day to open it on Home.
         </ThemedText>
-      </Card>
+      </GradientCard>
     </>
   );
 }
 
 function StreakBadge({ days }: { days: number }) {
+  const gradients = useGradients();
   const theme = useTheme();
   return (
-    <View style={[styles.streak, { backgroundColor: theme.backgroundSelected }]}>
-      <Ionicons name="flame" size={16} color={theme.streak} />
-      <ThemedText type="smallBold">{days}</ThemedText>
-    </View>
+    <LinearGradient
+      colors={gradients.streak}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[styles.streak, Shadow.glow(theme.streak)]}>
+      <Ionicons name="flame" size={16} color="#FFFFFF" />
+      <ThemedText type="smallBold" style={{ color: '#FFFFFF' }}>
+        {days}
+      </ThemedText>
+    </LinearGradient>
   );
 }
 
@@ -282,18 +325,31 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: Spacing.two,
   },
+  bigWeightRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: Spacing.one,
+  },
   bigWeight: {
-    fontSize: 34,
-    lineHeight: 40,
+    fontSize: 40,
+    lineHeight: 46,
     fontWeight: '800',
+    letterSpacing: -1,
+  },
+  unit: {
+    fontSize: 16,
+  },
+  goalChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.half,
+    marginTop: Spacing.half,
   },
   logBtn: {
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.three,
-    minHeight: 40,
+    minHeight: 42,
   },
   goalProgress: {
-    gap: Spacing.one,
+    gap: Spacing.two,
   },
   goalLabels: {
     flexDirection: 'row',
@@ -304,13 +360,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.half,
     paddingVertical: Spacing.one,
-    paddingHorizontal: Spacing.two,
+    paddingHorizontal: Spacing.three,
     borderRadius: Radius.full,
   },
   monthNav: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  navBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: Radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  monthLabel: {
+    fontSize: 15,
   },
   weekHeader: {
     flexDirection: 'row',
@@ -357,17 +423,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.one,
   },
-  planCard: {
-    gap: Spacing.three,
-  },
   planHead: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
   },
   planIcon: {
-    width: 40,
-    height: 40,
+    width: 46,
+    height: 46,
     borderRadius: Radius.full,
     alignItems: 'center',
     justifyContent: 'center',
@@ -376,18 +439,14 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
+  planCalories: {
+    fontSize: 16,
+  },
   planBody: {
     lineHeight: 20,
   },
-  detailHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-    gap: Spacing.two,
-  },
   detailTitle: {
-    fontSize: 22,
+    fontSize: 21,
     lineHeight: 28,
     flex: 1,
   },
@@ -397,28 +456,5 @@ const styles = StyleSheet.create({
   },
   hint: {
     textAlign: 'center',
-  },
-  empty: {
-    alignItems: 'center',
-    gap: Spacing.two,
-  },
-  list: {
-    gap: 0,
-    paddingVertical: Spacing.one,
-  },
-  entry: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: Spacing.three,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: Spacing.three,
-  },
-  entryInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  meta: {
-    textTransform: 'capitalize',
   },
 });

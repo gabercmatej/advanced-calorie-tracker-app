@@ -1,8 +1,12 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { StyleSheet, View } from 'react-native';
 
+import { PressableScale } from '@/components/motion';
 import { ThemedText } from '@/components/themed-text';
-import { Radius, Spacing } from '@/constants/theme';
+import { Radius, Shadow, Spacing } from '@/constants/theme';
+import { useGradients } from '@/hooks/use-gradients';
 import { useTheme } from '@/hooks/use-theme';
+import { haptics } from '@/lib/haptics';
 
 export interface SegmentOption<T extends string> {
   value: T;
@@ -18,36 +22,50 @@ interface SegmentedProps<T extends string> {
 }
 
 /**
- * A pill/segmented selector used for meals, sex, goal type, activity, etc.
- * `wrap` mode flows chips; otherwise segments share the row equally.
+ * A pill/segmented selector. The active chip fills with the brand gradient and
+ * casts a soft glow; every chip springs on tap and ticks a selection haptic.
  */
 export function Segmented<T extends string>({ options, value, onChange, wrap }: SegmentedProps<T>) {
   const theme = useTheme();
+  const gradients = useGradients();
 
   return (
     <View style={[styles.row, wrap && styles.wrap]}>
       {options.map((opt) => {
         const selected = opt.value === value;
         return (
-          <Pressable
+          <PressableScale
             key={opt.value}
-            onPress={() => onChange(opt.value)}
+            scaleTo={0.94}
+            onPress={() => {
+              haptics.selection();
+              onChange(opt.value);
+            }}
             accessibilityRole="button"
             accessibilityState={{ selected }}
             style={[
               styles.chip,
               !wrap && styles.flexChip,
               {
-                backgroundColor: selected ? theme.tint : theme.backgroundSelected,
-                borderColor: selected ? theme.tint : theme.border,
+                backgroundColor: selected ? 'transparent' : theme.backgroundSelected,
+                borderColor: selected ? 'transparent' : theme.border,
               },
+              selected && Shadow.glow(theme.tint),
             ]}>
+            {selected ? (
+              <LinearGradient
+                colors={gradients.brand}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+            ) : null}
             <ThemedText
               type="smallBold"
-              style={{ color: selected ? theme.onTint : theme.text, textAlign: 'center' }}>
+              style={{ color: selected ? '#FFFFFF' : theme.text, textAlign: 'center' }}>
               {opt.label}
             </ThemedText>
-          </Pressable>
+          </PressableScale>
         );
       })}
     </View>
@@ -67,6 +85,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     borderRadius: Radius.full,
     borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 38,
   },
   flexChip: {
     flex: 1,

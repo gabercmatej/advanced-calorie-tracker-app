@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -10,20 +11,35 @@ interface FieldProps extends TextInputProps {
   suffix?: string;
 }
 
-/** A labelled text/number input matching the app's card styling. */
-export function Field({ label, suffix, style, ...props }: FieldProps) {
+/** A labelled text/number input that lights up its border on focus. */
+export function Field({ label, suffix, style, onFocus, onBlur, ...props }: FieldProps) {
   const theme = useTheme();
+  const [focused, setFocused] = useState(false);
+
   return (
     <View style={styles.container}>
       <ThemedText type="smallBold">{label}</ThemedText>
       <View
         style={[
           styles.inputRow,
-          { backgroundColor: theme.backgroundSelected, borderColor: theme.border },
+          {
+            backgroundColor: theme.backgroundSelected,
+            borderColor: focused ? theme.tint : theme.border,
+            borderWidth: focused ? 1.5 : StyleSheet.hairlineWidth,
+          },
+          focused && { boxShadow: `0px 0px 0px 3px ${theme.tint}22` },
         ]}>
         <TextInput
           placeholderTextColor={theme.textSecondary}
           style={[styles.input, { color: theme.text }, style]}
+          onFocus={(e) => {
+            setFocused(true);
+            onFocus?.(e);
+          }}
+          onBlur={(e) => {
+            setFocused(false);
+            onBlur?.(e);
+          }}
           {...props}
         />
         {suffix ? (
@@ -43,9 +59,8 @@ const styles = StyleSheet.create({
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 48,
+    height: 50,
     borderRadius: Radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: Spacing.three,
     gap: Spacing.two,
   },

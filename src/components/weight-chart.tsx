@@ -1,8 +1,16 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedProps,
+  useSharedValue,
+  withDelay,
+  withTiming,
+} from 'react-native-reanimated';
 import Svg, {
   Circle,
   Defs,
+  G,
   Line,
   LinearGradient,
   Polygon,
@@ -16,6 +24,9 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { daysBetween, fromDateKey, kgToLb } from '@/lib/nutrition';
 import type { UnitSystem, WeightEntry } from '@/types';
+
+const AnimatedPolyline = Animated.createAnimatedComponent(Polyline);
+const AnimatedG = Animated.createAnimatedComponent(G);
 
 interface WeightChartProps {
   actual: WeightEntry[];
@@ -37,6 +48,15 @@ const PAD_BOTTOM = 22;
 export function WeightChart({ actual, projection = [], units, height = 200 }: WeightChartProps) {
   const theme = useTheme();
   const [width, setWidth] = useState(0);
+
+  // Drive both the line "draw-on" and the fade-in of points/projection. A large
+  // constant dash covers any real path length, so we don't need to measure it.
+  const reveal = useSharedValue(0);
+  useEffect(() => {
+    reveal.value = withDelay(200, withTiming(1, { duration: 1100, easing: Easing.out(Easing.cubic) }));
+  }, [reveal]);
+  const lineProps = useAnimatedProps(() => ({ strokeDashoffset: 5000 * (1 - reveal.value) }));
+  const fadeProps = useAnimatedProps(() => ({ opacity: reveal.value }));
 
   const sorted = [...actual].sort((a, b) => (a.date < b.date ? -1 : 1));
   const all = [...sorted, ...projection];
@@ -129,32 +149,39 @@ export function WeightChart({ actual, projection = [], units, height = 200 }: We
           })}
 
           {/* Target trajectory — a soft gradient band with a smooth line on top */}
-          {projArea ? <Polygon points={projArea} fill="url(#targetBand)" /> : null}
-          {projPts ? (
-            <Polyline
-              points={projPts}
-              fill="none"
-              stroke={theme.success}
-              strokeWidth={2.5}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              opacity={0.9}
-            />
-          ) : null}
+          <AnimatedG animatedProps={fadeProps}>
+            {projArea ? <Polygon points={projArea} fill="url(#targetBand)" /> : null}
+            {projPts ? (
+              <Polyline
+                points={projPts}
+                fill="none"
+                stroke={theme.success}
+                strokeWidth={2.5}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity={0.9}
+              />
+            ) : null}
+          </AnimatedG>
 
-          {/* Actual weights (solid) */}
+          {/* Actual weights (solid) — drawn on from left to right */}
           {actualPts ? (
-            <Polyline
+            <AnimatedPolyline
               points={actualPts}
               fill="none"
               stroke={theme.tint}
-              strokeWidth={2.5}
+              strokeWidth={3}
+              strokeLinecap="round"
               strokeLinejoin="round"
+              strokeDasharray={5000}
+              animatedProps={lineProps}
             />
           ) : null}
-          {sorted.map((p) => (
-            <Circle key={p.date} cx={px(p.date)} cy={py(p.weightKg)} r={3.5} fill={theme.tint} />
-          ))}
+          <AnimatedG animatedProps={fadeProps}>
+            {sorted.map((p) => (
+              <Circle key={p.date} cx={px(p.date)} cy={py(p.weightKg)} r={4} fill={theme.tint} />
+            ))}
+          </AnimatedG>
 
           {/* X axis end labels */}
           <SvgText x={PAD_LEFT} y={height - 6} fontSize={9} fill={theme.textSecondary} textAnchor="start">

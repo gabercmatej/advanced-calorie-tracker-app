@@ -1,17 +1,21 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { CalorieRing } from '@/components/calorie-ring';
-import { Card } from '@/components/card';
+import { GradientCard } from '@/components/gradient-card';
 import { MacroRow } from '@/components/macro-row';
+import { Appear, CountUp, Floating, PressableScale } from '@/components/motion';
 import { Screen } from '@/components/screen';
 import { ThemedText } from '@/components/themed-text';
-import { Radius, Spacing } from '@/constants/theme';
+import { Radius, Shadow, Spacing } from '@/constants/theme';
 import { useDiary } from '@/context/DiaryContext';
 import { useEntryPhoto } from '@/hooks/use-entry-photo';
+import { useGradients } from '@/hooks/use-gradients';
 import { useTheme } from '@/hooks/use-theme';
+import { haptics } from '@/lib/haptics';
 import {
   formatWeight,
   fromDateKey,
@@ -21,7 +25,7 @@ import {
   toDateKey,
   weekOf,
 } from '@/lib/nutrition';
-import type { FoodEntry } from '@/types';
+import type { FoodEntry, Macros } from '@/types';
 
 const WEEKDAY = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
@@ -34,6 +38,7 @@ function greeting(): string {
 
 export default function HomeScreen() {
   const theme = useTheme();
+  const gradients = useGradients();
   const router = useRouter();
   const {
     profile,
@@ -62,10 +67,10 @@ export default function HomeScreen() {
   return (
     <Screen
       title="CalorieTrackerAI"
-      subtitle={`${greeting()}, ${profile.name}`}
+      subtitle={`${greeting()}, ${profile.name} 👋`}
       headerRight={streak > 0 ? <StreakBadge days={streak} /> : undefined}>
       {/* Week strip — tap any past day to point Home at it (no separate screen) */}
-      <View style={styles.week}>
+      <Appear delay={60} style={styles.week}>
         {week.map((key) => {
           const isSelected = key === selectedDate;
           const isTodayCell = key === today;
@@ -74,11 +79,15 @@ export default function HomeScreen() {
           const met = loggedDates.has(key) && cals > 0 && cals <= goal.calories * 1.05;
           const dow = fromDateKey(key).getDay();
           return (
-            <Pressable
+            <PressableScale
               key={key}
+              scaleTo={0.9}
               style={styles.day}
               disabled={isFuture}
-              onPress={() => setSelectedDate(key)}>
+              onPress={() => {
+                haptics.selection();
+                setSelectedDate(key);
+              }}>
               <ThemedText
                 type={isTodayCell ? 'smallBold' : 'small'}
                 themeColor={isTodayCell ? 'tint' : 'textSecondary'}>
@@ -88,21 +97,30 @@ export default function HomeScreen() {
                 style={[
                   styles.dayCircle,
                   {
-                    backgroundColor: met ? theme.tint : isSelected ? theme.backgroundSelected : 'transparent',
-                    borderColor: isSelected ? theme.tint : met ? theme.tint : theme.border,
+                    backgroundColor: met ? 'transparent' : isSelected ? theme.tintSoft : 'transparent',
+                    borderColor: isSelected ? theme.tint : met ? 'transparent' : theme.border,
                     borderWidth: isSelected ? 2 : 1.5,
                   },
+                  met && Shadow.glow(theme.tint),
                 ]}>
+                {met ? (
+                  <LinearGradient
+                    colors={gradients.brand}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={[StyleSheet.absoluteFill, { borderRadius: Radius.full }]}
+                  />
+                ) : null}
                 <ThemedText
-                  type={isSelected ? 'smallBold' : 'small'}
-                  style={{ color: met ? theme.onTint : isFuture ? theme.tabIconDefault : theme.text }}>
+                  type={isSelected || met ? 'smallBold' : 'small'}
+                  style={{ color: met ? '#FFFFFF' : isFuture ? theme.tabIconDefault : theme.text }}>
                   {fromDateKey(key).getDate()}
                 </ThemedText>
               </View>
-            </Pressable>
+            </PressableScale>
           );
         })}
-      </View>
+      </Appear>
 
       {/* Which day is in focus + quick jump back to today */}
       <View style={styles.dateBar}>
@@ -110,157 +128,276 @@ export default function HomeScreen() {
           {relativeDayLabel(selectedDate)}
         </ThemedText>
         {!isToday && (
-          <Pressable
-            onPress={() => setSelectedDate(today)}
-            hitSlop={8}
-            style={[styles.todayChip, { backgroundColor: theme.backgroundSelected }]}
+          <PressableScale
+            onPress={() => {
+              haptics.light();
+              setSelectedDate(today);
+            }}
+            scaleTo={0.92}
+            style={[styles.todayChip, { backgroundColor: theme.tintSoft }]}
             accessibilityRole="button"
             accessibilityLabel="Jump to today">
             <Ionicons name="today-outline" size={13} color={theme.tint} />
             <ThemedText type="small" style={{ color: theme.tint }}>
               Today
             </ThemedText>
-          </Pressable>
+          </PressableScale>
         )}
       </View>
 
-      {/* Big calorie ring */}
-      <Card style={styles.summaryCard}>
-        <CalorieRing value={pct} color={over ? theme.danger : theme.tint} size={220} thickness={20}>
-          <ThemedText style={styles.ringNumber} themeColor={over ? 'danger' : 'text'}>
-            {over ? Math.round(totals.calories - goal.calories) : left}
-          </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            {over ? 'calories over' : 'calories left'}
-          </ThemedText>
-          <View style={[styles.ringPill, { backgroundColor: theme.backgroundSelected }]}>
-            <Ionicons name="flame" size={13} color={over ? theme.danger : theme.tint} />
-            <ThemedText type="small" themeColor="textSecondary">
-              {Math.round(totals.calories)} / {goal.calories}
-            </ThemedText>
-          </View>
-        </CalorieRing>
+      {/* Hero: big animated calorie ring with floating nutrient chips */}
+      <Appear delay={120}>
+        <GradientCard variant="raised" contentStyle={styles.summaryCard}>
+          <View style={styles.ringWrap}>
+            <CalorieRing
+              value={pct}
+              gradient={over ? gradients.danger : gradients.brand}
+              size={224}
+              thickness={22}>
+              <CountUp
+                value={over ? Math.round(totals.calories - goal.calories) : left}
+                style={styles.ringNumber}
+                themeColor={over ? 'danger' : 'text'}
+              />
+              <ThemedText type="small" themeColor="textSecondary">
+                {over ? 'calories over' : 'calories left'}
+              </ThemedText>
+              <View style={[styles.ringPill, { backgroundColor: theme.tintSoft }]}>
+                <Ionicons name="flame" size={13} color={over ? theme.danger : theme.tint} />
+                <ThemedText type="small" themeColor="textSecondary">
+                  {Math.round(totals.calories)} / {goal.calories}
+                </ThemedText>
+              </View>
+            </CalorieRing>
 
-        <View style={styles.macros}>
-          <MacroRow consumed={totals.macros} goal={goal.macros} />
-        </View>
-      </Card>
+            {/* Floating nutrient chips orbiting the ring */}
+            <NutrientChip
+              style={styles.chipTopLeft}
+              color={theme.protein}
+              label="Protein"
+              value={Math.round(totals.macros.protein)}
+              delay={0}
+            />
+            <NutrientChip
+              style={styles.chipTopRight}
+              color={theme.carbs}
+              label="Carbs"
+              value={Math.round(totals.macros.carbs)}
+              delay={700}
+            />
+            <NutrientChip
+              style={styles.chipBottom}
+              color={theme.fat}
+              label="Fat"
+              value={Math.round(totals.macros.fat)}
+              delay={1400}
+            />
+          </View>
+
+          <View style={styles.macros}>
+            <MacroRow consumed={totals.macros} goal={goal.macros} />
+          </View>
+        </GradientCard>
+      </Appear>
 
       {/* Meals */}
-      <View style={styles.sectionHeader}>
+      <Appear delay={180} style={styles.sectionHeader}>
         <ThemedText type="subtitle" style={styles.cardTitle}>
           {isToday ? "Today's meals" : 'Meals'}
         </ThemedText>
-      </View>
+        {entries.length > 0 ? (
+          <View style={[styles.countPill, { backgroundColor: theme.tintSoft }]}>
+            <ThemedText type="small" style={{ color: theme.tint }}>
+              {entries.length}
+            </ThemedText>
+          </View>
+        ) : null}
+      </Appear>
 
       {entries.length === 0 ? (
-        <Pressable onPress={() => router.push(isToday ? '/add' : `/add?date=${selectedDate}`)}>
-          <Card style={styles.empty}>
-            <Ionicons name="camera-outline" size={32} color={theme.textSecondary} />
-            <ThemedText type="default" themeColor="textSecondary" style={styles.emptyText}>
-              Nothing logged {isToday ? 'yet' : 'on this day'}. Tap the + button to snap a photo of your
-              meal and let AI count the calories.
-            </ThemedText>
-          </Card>
-        </Pressable>
+        <Appear delay={220}>
+          <PressableScale onPress={() => router.push(isToday ? '/add' : `/add?date=${selectedDate}`)}>
+            <GradientCard contentStyle={styles.empty}>
+              <View style={[styles.emptyIcon, { backgroundColor: theme.tintSoft }]}>
+                <Ionicons name="camera-outline" size={30} color={theme.tint} />
+              </View>
+              <ThemedText type="smallBold" style={styles.emptyTitle}>
+                {isToday ? 'Nothing logged yet' : 'Nothing on this day'}
+              </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
+                Tap the + button to snap a photo of your meal and let AI count the calories. ✨
+              </ThemedText>
+            </GradientCard>
+          </PressableScale>
+        </Appear>
       ) : (
-        <Card style={styles.list}>
-          {entries.map((e) => (
-            <EntryRow key={e.id} entry={e} onPress={() => router.push(`/entry/${e.id}`)} />
+        <GradientCard contentStyle={styles.list}>
+          {entries.map((e, i) => (
+            <Appear key={e.id} delay={220 + i * 60}>
+              <EntryRow
+                entry={e}
+                first={i === 0}
+                onPress={() => router.push(`/entry/${e.id}`)}
+              />
+            </Appear>
           ))}
-        </Card>
+        </GradientCard>
       )}
 
       {/* Weight for this day — tap to change, trash to remove */}
-      <View style={styles.sectionHeader}>
+      <Appear delay={260} style={styles.sectionHeader}>
         <ThemedText type="subtitle" style={styles.cardTitle}>
           Weight
         </ThemedText>
-      </View>
-      <Card style={styles.weightCard}>
-        <Pressable
-          style={styles.weightMain}
-          onPress={() => router.push(`/log-weight?date=${selectedDate}`)}
-          accessibilityRole="button"
-          accessibilityLabel={dayWeight ? 'Edit weight' : 'Log weight for this day'}>
-          <View style={[styles.weightIcon, { backgroundColor: theme.backgroundSelected }]}>
-            <Ionicons name="scale-outline" size={20} color={theme.tint} />
-          </View>
-          {dayWeight ? (
-            <View style={styles.weightInfo}>
-              <ThemedText type="smallBold">{formatWeight(dayWeight.weightKg, profile.units)}</ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
-                Tap to change
-              </ThemedText>
-            </View>
-          ) : (
-            <View style={styles.weightInfo}>
-              <ThemedText type="smallBold" themeColor="textSecondary">
-                No weight logged
-              </ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
-                Tap to add for {relativeDayLabel(selectedDate).toLowerCase()}
-              </ThemedText>
-            </View>
-          )}
-        </Pressable>
-        {dayWeight && (
-          <Pressable
-            onPress={() => removeWeight(selectedDate)}
-            hitSlop={10}
-            style={styles.weightDelete}
+      </Appear>
+      <Appear delay={300}>
+        <GradientCard contentStyle={styles.weightCard}>
+          <PressableScale
+            style={styles.weightMain}
+            onPress={() => {
+              haptics.light();
+              router.push(`/log-weight?date=${selectedDate}`);
+            }}
             accessibilityRole="button"
-            accessibilityLabel="Delete weight">
-            <Ionicons name="trash-outline" size={20} color={theme.danger} />
-          </Pressable>
-        )}
-      </Card>
+            accessibilityLabel={dayWeight ? 'Edit weight' : 'Log weight for this day'}>
+            <View style={[styles.weightIcon, { backgroundColor: theme.tintSoft }]}>
+              <Ionicons name="scale-outline" size={22} color={theme.tint} />
+            </View>
+            {dayWeight ? (
+              <View style={styles.weightInfo}>
+                <ThemedText type="smallBold" style={styles.weightValue}>
+                  {formatWeight(dayWeight.weightKg, profile.units)}
+                </ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  Tap to change
+                </ThemedText>
+              </View>
+            ) : (
+              <View style={styles.weightInfo}>
+                <ThemedText type="smallBold" themeColor="textSecondary">
+                  No weight logged
+                </ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  Tap to add for {relativeDayLabel(selectedDate).toLowerCase()}
+                </ThemedText>
+              </View>
+            )}
+          </PressableScale>
+          {dayWeight && (
+            <PressableScale
+              onPress={() => {
+                haptics.warning();
+                removeWeight(selectedDate);
+              }}
+              scaleTo={0.88}
+              style={styles.weightDelete}
+              accessibilityRole="button"
+              accessibilityLabel="Delete weight">
+              <Ionicons name="trash-outline" size={20} color={theme.danger} />
+            </PressableScale>
+          )}
+        </GradientCard>
+      </Appear>
     </Screen>
   );
 }
 
-function StreakBadge({ days }: { days: number }) {
+function NutrientChip({
+  color,
+  label,
+  value,
+  delay,
+  style,
+}: {
+  color: string;
+  label: string;
+  value: number;
+  delay: number;
+  style: object;
+}) {
   const theme = useTheme();
   return (
-    <View style={[styles.streak, { backgroundColor: theme.backgroundSelected }]}>
-      <Ionicons name="flame" size={16} color={theme.streak} />
-      <ThemedText type="smallBold">{days}</ThemedText>
-    </View>
+    <Floating delay={delay} amplitude={5} style={[styles.chip, style]}>
+      <View style={[styles.chipInner, { backgroundColor: theme.backgroundElement, borderColor: theme.border }, Shadow.raised]}>
+        <View style={[styles.chipDot, { backgroundColor: color }]} />
+        <View>
+          <ThemedText type="smallBold" style={styles.chipValue}>
+            {value}g
+          </ThemedText>
+          <ThemedText type="small" themeColor="textSecondary" style={styles.chipLabel}>
+            {label}
+          </ThemedText>
+        </View>
+      </View>
+    </Floating>
   );
 }
 
-function EntryRow({ entry, onPress }: { entry: FoodEntry; onPress: () => void }) {
+function StreakBadge({ days }: { days: number }) {
+  const gradients = useGradients();
+  const theme = useTheme();
+  return (
+    <LinearGradient
+      colors={gradients.streak}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[styles.streak, Shadow.glow(theme.streak)]}>
+      <Ionicons name="flame" size={16} color="#FFFFFF" />
+      <ThemedText type="smallBold" style={{ color: '#FFFFFF' }}>
+        {days}
+      </ThemedText>
+    </LinearGradient>
+  );
+}
+
+function EntryRow({ entry, first, onPress }: { entry: FoodEntry; first: boolean; onPress: () => void }) {
   const theme = useTheme();
   const photoUri = useEntryPhoto(entry);
+  const macros: Macros = entry.macros;
   return (
-    <Pressable
-      style={[styles.entry, { borderBottomColor: theme.border }]}
-      onPress={onPress}
+    <PressableScale
+      scaleTo={0.98}
+      style={[styles.entry, !first && { borderTopColor: theme.border, borderTopWidth: StyleSheet.hairlineWidth }]}
+      onPress={() => {
+        haptics.light();
+        onPress();
+      }}
       accessibilityRole="button"
       accessibilityLabel={`Edit ${entry.name}`}>
       {photoUri ? (
         <Image source={{ uri: photoUri }} style={styles.thumb} contentFit="cover" />
       ) : (
-        <View style={[styles.thumb, styles.thumbPlaceholder, { backgroundColor: theme.backgroundSelected }]}>
-          <Ionicons name="restaurant" size={18} color={theme.textSecondary} />
+        <View style={[styles.thumb, styles.thumbPlaceholder, { backgroundColor: theme.tintSoft }]}>
+          <Ionicons name="restaurant" size={22} color={theme.tint} />
         </View>
       )}
       <View style={styles.entryInfo}>
-        <ThemedText type="smallBold" numberOfLines={1}>
+        <ThemedText type="smallBold" numberOfLines={1} style={styles.entryName}>
           {entry.name}
         </ThemedText>
         <ThemedText type="small" themeColor="textSecondary" style={styles.entryMeta}>
           {entry.meal} · {Math.round(entry.calories * entry.quantity)} kcal
           {entry.aiEstimated ? ' · AI' : ''}
         </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          P {Math.round(entry.macros.protein * entry.quantity)}g · C{' '}
-          {Math.round(entry.macros.carbs * entry.quantity)}g · F{' '}
-          {Math.round(entry.macros.fat * entry.quantity)}g
-        </ThemedText>
+        <View style={styles.entryMacros}>
+          <MacroTag color={theme.protein} text={`P ${Math.round(macros.protein * entry.quantity)}g`} />
+          <MacroTag color={theme.carbs} text={`C ${Math.round(macros.carbs * entry.quantity)}g`} />
+          <MacroTag color={theme.fat} text={`F ${Math.round(macros.fat * entry.quantity)}g`} />
+        </View>
       </View>
       <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
-    </Pressable>
+    </PressableScale>
+  );
+}
+
+function MacroTag({ color, text }: { color: string; text: string }) {
+  return (
+    <View style={styles.macroTag}>
+      <View style={[styles.macroTagDot, { backgroundColor: color }]} />
+      <ThemedText type="small" themeColor="textSecondary">
+        {text}
+      </ThemedText>
+    </View>
   );
 }
 
@@ -275,12 +412,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   dayCircle: {
-    width: 34,
-    height: 34,
+    width: 38,
+    height: 38,
     borderRadius: Radius.full,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   dateBar: {
     flexDirection: 'row',
@@ -292,18 +430,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.half,
-    paddingVertical: Spacing.half,
+    paddingVertical: Spacing.one,
     paddingHorizontal: Spacing.two,
     borderRadius: Radius.full,
   },
   summaryCard: {
     alignItems: 'center',
     gap: Spacing.four,
+    paddingVertical: Spacing.five,
+  },
+  ringWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   ringNumber: {
-    fontSize: 52,
-    lineHeight: 56,
+    fontSize: 54,
+    lineHeight: 58,
     fontWeight: '800',
+    letterSpacing: -1,
   },
   ringPill: {
     flexDirection: 'row',
@@ -314,6 +458,42 @@ const styles = StyleSheet.create({
     borderRadius: Radius.full,
     marginTop: Spacing.two,
   },
+  chip: {
+    position: 'absolute',
+  },
+  chipTopLeft: {
+    top: 2,
+    left: -14,
+  },
+  chipTopRight: {
+    top: 2,
+    right: -14,
+  },
+  chipBottom: {
+    bottom: -6,
+  },
+  chipInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingVertical: Spacing.one,
+    paddingHorizontal: Spacing.two,
+    borderRadius: Radius.full,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  chipDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  chipValue: {
+    fontSize: 13,
+    lineHeight: 16,
+  },
+  chipLabel: {
+    fontSize: 11,
+    lineHeight: 13,
+  },
   macros: {
     width: '100%',
   },
@@ -322,11 +502,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.half,
     paddingVertical: Spacing.one,
-    paddingHorizontal: Spacing.two,
+    paddingHorizontal: Spacing.three,
     borderRadius: Radius.full,
   },
   cardTitle: {
-    fontSize: 20,
+    fontSize: 21,
     lineHeight: 26,
   },
   sectionHeader: {
@@ -334,13 +514,35 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     width: '100%',
+    gap: Spacing.two,
+  },
+  countPill: {
+    minWidth: 24,
+    height: 24,
+    borderRadius: Radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.two,
   },
   empty: {
     alignItems: 'center',
     gap: Spacing.two,
+    paddingVertical: Spacing.four,
+  },
+  emptyIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: Radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.one,
+  },
+  emptyTitle: {
+    fontSize: 16,
   },
   emptyText: {
     textAlign: 'center',
+    paddingHorizontal: Spacing.two,
   },
   list: {
     gap: 0,
@@ -350,14 +552,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: Spacing.two,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingVertical: Spacing.three,
     gap: Spacing.three,
   },
   thumb: {
-    width: 44,
-    height: 44,
-    borderRadius: Radius.sm,
+    width: 56,
+    height: 56,
+    borderRadius: Radius.md,
   },
   thumbPlaceholder: {
     alignItems: 'center',
@@ -365,10 +566,28 @@ const styles = StyleSheet.create({
   },
   entryInfo: {
     flex: 1,
-    gap: 2,
+    gap: 3,
+  },
+  entryName: {
+    fontSize: 15,
   },
   entryMeta: {
     textTransform: 'capitalize',
+  },
+  entryMacros: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+    marginTop: 2,
+  },
+  macroTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  macroTagDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   weightCard: {
     flexDirection: 'row',
@@ -383,8 +602,8 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
   weightIcon: {
-    width: 40,
-    height: 40,
+    width: 46,
+    height: 46,
     borderRadius: Radius.full,
     alignItems: 'center',
     justifyContent: 'center',
@@ -392,6 +611,9 @@ const styles = StyleSheet.create({
   weightInfo: {
     flex: 1,
     gap: 2,
+  },
+  weightValue: {
+    fontSize: 18,
   },
   weightDelete: {
     padding: Spacing.one,

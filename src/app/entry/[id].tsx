@@ -4,12 +4,15 @@ import { useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AmbientBackground } from '@/components/ambient-background';
 import { Button } from '@/components/button';
 import { Field } from '@/components/field';
+import { Appear, PressableScale } from '@/components/motion';
 import { Segmented } from '@/components/segmented';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
+import { haptics } from '@/lib/haptics';
 import { useDiary } from '@/context/DiaryContext';
 import { useEntryPhoto } from '@/hooks/use-entry-photo';
 import { useTheme } from '@/hooks/use-theme';
@@ -66,12 +69,13 @@ export default function EditEntryScreen() {
 
   return (
     <ThemedView style={styles.flex}>
+      <AmbientBackground />
       <ScrollView
         contentContainerStyle={[
           styles.content,
           { paddingTop: Platform.OS === 'ios' ? Spacing.four : insets.top + Spacing.four },
         ]}>
-        <View style={styles.column}>
+        <Appear style={styles.column}>
           <View style={styles.header}>
             <ThemedText type="title" style={styles.title}>
               Edit food
@@ -126,13 +130,20 @@ export default function EditEntryScreen() {
             </View>
           </View>
 
-          <Button title="Save changes" onPress={onSave} />
-          <Pressable onPress={onDelete} style={styles.delete} accessibilityRole="button">
+          <Button title="Save changes" icon="checkmark" onPress={onSave} />
+          <PressableScale
+            onPress={() => {
+              haptics.warning();
+              onDelete();
+            }}
+            scaleTo={0.96}
+            style={styles.delete}
+            accessibilityRole="button">
             <ThemedText type="smallBold" themeColor="danger">
               Delete entry
             </ThemedText>
-          </Pressable>
-        </View>
+          </PressableScale>
+        </Appear>
       </ScrollView>
     </ThemedView>
   );
@@ -167,8 +178,8 @@ const styles = StyleSheet.create({
   },
   photo: {
     width: '100%',
-    height: 180,
-    borderRadius: Radius.md,
+    height: 220,
+    borderRadius: Radius.lg,
   },
   field: {
     gap: Spacing.two,

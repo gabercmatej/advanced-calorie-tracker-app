@@ -1,24 +1,40 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
 
 import { Celebration } from '@/components/celebration';
+import { haptics } from '@/lib/haptics';
+
+interface CelebrateOptions {
+  /** Rain confetti (streak milestones and other big moments). */
+  confetti?: boolean;
+}
 
 interface CelebrationContextValue {
   /** Show the reward flourish with a short message. */
-  celebrate: (message: string) => void;
+  celebrate: (message: string, options?: CelebrateOptions) => void;
 }
 
 const CelebrationContext = createContext<CelebrationContextValue | null>(null);
 
-export function CelebrationProvider({ children }: { children: ReactNode }) {
-  const [message, setMessage] = useState<string | null>(null);
+interface CelebrationState {
+  message: string;
+  confetti: boolean;
+}
 
-  const celebrate = useCallback((msg: string) => setMessage(msg), []);
-  const clear = useCallback(() => setMessage(null), []);
+export function CelebrationProvider({ children }: { children: ReactNode }) {
+  const [state, setState] = useState<CelebrationState | null>(null);
+
+  const celebrate = useCallback((message: string, options?: CelebrateOptions) => {
+    haptics.success();
+    setState({ message, confetti: options?.confetti ?? false });
+  }, []);
+  const clear = useCallback(() => setState(null), []);
 
   return (
     <CelebrationContext.Provider value={{ celebrate }}>
       {children}
-      {message !== null ? <Celebration message={message} onDone={clear} /> : null}
+      {state !== null ? (
+        <Celebration message={state.message} confetti={state.confetti} onDone={clear} />
+      ) : null}
     </CelebrationContext.Provider>
   );
 }

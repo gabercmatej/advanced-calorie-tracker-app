@@ -13,20 +13,26 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BarcodeScanner } from '@/components/barcode-scanner';
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { Field } from '@/components/field';
+import { Appear, PressableScale } from '@/components/motion';
+import { ScanOverlay } from '@/components/scan-overlay';
+import { FoodEstimateSkeleton } from '@/components/skeleton';
 import { Segmented } from '@/components/segmented';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
+import { MaxContentWidth, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { useCelebration } from '@/context/CelebrationContext';
 import { useDiary } from '@/context/DiaryContext';
 import { useTheme } from '@/hooks/use-theme';
+import { haptics } from '@/lib/haptics';
 import { estimateFood, type FoodEstimate } from '@/lib/ai';
+import { lookupBarcode } from '@/lib/barcode';
 import { compressForUpload, pickPhoto, takePhoto, type PickedPhoto } from '@/lib/image';
-import { relativeDayLabel, toDateKey } from '@/lib/nutrition';
+import { isStreakMilestone, relativeDayLabel, toDateKey } from '@/lib/nutrition';
 import { uploadPhoto } from '@/lib/remote';
 import { MEAL_TYPES, type MealType } from '@/types';
 
@@ -59,7 +65,7 @@ export default function AddFoodScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { date } = useLocalSearchParams<{ date?: string }>();
-  const { addEntry, updateEntry } = useDiary();
+  const { addEntry, updateEntry, entriesForDate, streak } = useDiary();
   const { userId, usesSupabase } = useAuth();
   const { celebrate } = useCelebration();
 
@@ -71,6 +77,10 @@ export default function AddFoodScreen() {
   const [meal, setMeal] = useState<MealType>(defaultMeal());
   const [loading, setLoading] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
+  /** Where the current draft came from — drives the review badge and how it's logged. */
+  const [source, setSource] = useState<'ai' | 'barcode' | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
 
   const canEstimate = description.trim().length > 0 || photo !== null;
 
@@ -93,6 +103,7 @@ export default function AddFoodScreen() {
     if (!canEstimate) return;
     setLoading(true);
     setDraft(null);
+    setScanError(null);
     try {
       const est = await estimateFood({
         description,
@@ -100,7 +111,28 @@ export default function AddFoodScreen() {
         photoBase64: photo?.base64,
         photoMediaType: photo?.mimeType,
       });
+      setSource('ai');
       setDraft(draftFrom(est));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function onScanned(code: string) {
+    setScanning(false);
+    setLoading(true);
+    setDraft(null);
+    setScanError(null);
+    try {
+      const est = await lookupBarcode(code);
+      if (!est) {
+        setScanError(`No product found for barcode ${code}. Try a photo or description instead.`);
+        return;
+      }
+      setSource('barcode');
+      setDraft(draftFrom(est));
+    } catch {
+      setScanError('Could not reach the food database. Check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -110,6 +142,9 @@ export default function AddFoodScreen() {
     if (!draft) return;
     const calories = Math.max(0, Math.round(Number(draft.calories) || 0));
     const quantity = Math.max(0.25, Number(draft.quantity) || 1);
+    // First log of the day extends the streak — celebrate milestones with confetti.
+    const firstOfDay = entriesForDate(targetDate).length === 0 && targetDate === toDateKey();
+    const milestone = firstOfDay && isStreakMilestone(streak + 1);
     const created = addEntry({
       name: draft.name.trim() || 'Food',
       date: targetDate,
@@ -121,7 +156,7 @@ export default function AddFoodScreen() {
         fat: Math.max(0, Number(draft.fat) || 0),
       },
       quantity,
-      aiEstimated: true,
+      aiEstimated: source !== 'barcode',
       photoUri: photo?.uri ?? undefined,
     });
 
@@ -141,7 +176,12 @@ export default function AddFoodScreen() {
       })();
     }
 
-    celebrate(`+${Math.round(calories * quantity)} kcal logged`);
+    celebrate(
+      milestone
+        ? `🔥 ${streak + 1} day streak!`
+        : `+${Math.round(calories * quantity)} kcal logged`,
+      { confetti: milestone },
+    );
     router.back();
   }
 
@@ -172,23 +212,43 @@ export default function AddFoodScreen() {
               {photo ? (
                 <View>
                   <Image source={{ uri: photo.uri }} style={styles.photo} contentFit="cover" />
-                  <Pressable
-                    style={[styles.removePhoto, { backgroundColor: theme.background }]}
-                    onPress={() => {
-                      setPhoto(null);
-                      setDraft(null);
-                    }}
-                    hitSlop={8}
-                    accessibilityLabel="Remove photo">
-                    <Ionicons name="close" size={18} color={theme.text} />
-                  </Pressable>
+                  {loading ? <ScanOverlay height={250} /> : null}
+                  {!loading ? (
+                    <Pressable
+                      style={[styles.removePhoto, { backgroundColor: theme.overlay }]}
+                      onPress={() => {
+                        setPhoto(null);
+                        setDraft(null);
+                      }}
+                      hitSlop={8}
+                      accessibilityLabel="Remove photo">
+                      <Ionicons name="close" size={18} color="#FFFFFF" />
+                    </Pressable>
+                  ) : null}
                 </View>
               ) : (
                 <View style={styles.photoActions}>
-                  <PhotoButton icon="camera" label="Take photo" onPress={onPickCamera} />
+                  <PhotoButton icon="camera" label="Photo" onPress={onPickCamera} />
                   <PhotoButton icon="images" label="Gallery" onPress={onPickLibrary} />
+                  <PhotoButton
+                    icon="barcode-outline"
+                    label="Scan"
+                    onPress={() => {
+                      setScanError(null);
+                      setScanning(true);
+                    }}
+                  />
                 </View>
               )}
+
+              {scanError ? (
+                <View style={styles.scanError}>
+                  <Ionicons name="alert-circle-outline" size={16} color={theme.textSecondary} />
+                  <ThemedText type="small" themeColor="textSecondary" style={styles.scanErrorText}>
+                    {scanError}
+                  </ThemedText>
+                </View>
+              ) : null}
 
               <ThemedText type="smallBold">Description {photo ? '(optional)' : ''}</ThemedText>
               <TextInput
@@ -219,16 +279,29 @@ export default function AddFoodScreen() {
               ) : null}
             </Card>
 
+            {loading && !draft ? (
+              <Appear>
+                <Card>
+                  <FoodEstimateSkeleton />
+                </Card>
+              </Appear>
+            ) : null}
+
             {draft && (
+              <Appear>
               <Card>
                 <View style={styles.estimateHeader}>
                   <ThemedText type="subtitle" style={styles.estimateTitle}>
                     Review & adjust
                   </ThemedText>
                   <View style={[styles.badge, { backgroundColor: theme.backgroundSelected }]}>
-                    <Ionicons name="sparkles" size={12} color={theme.tint} />
+                    <Ionicons
+                      name={source === 'barcode' ? 'barcode-outline' : 'sparkles'}
+                      size={12}
+                      color={theme.tint}
+                    />
                     <ThemedText type="small" themeColor="textSecondary">
-                      {Math.round(draft.confidence * 100)}% sure
+                      {source === 'barcode' ? 'From label' : `${Math.round(draft.confidence * 100)}% sure`}
                     </ThemedText>
                   </View>
                 </View>
@@ -256,12 +329,19 @@ export default function AddFoodScreen() {
                   </View>
                 </View>
 
-                <Button title="Add to diary" onPress={onAdd} />
+                <Button title="Add to diary" icon="checkmark-circle" onPress={onAdd} />
               </Card>
+              </Appear>
             )}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <BarcodeScanner
+        visible={scanning}
+        onClose={() => setScanning(false)}
+        onScanned={onScanned}
+      />
     </ThemedView>
   );
 }
@@ -277,16 +357,19 @@ function PhotoButton({
 }) {
   const theme = useTheme();
   return (
-    <Pressable
-      onPress={onPress}
+    <PressableScale
+      onPress={() => {
+        haptics.light();
+        onPress();
+      }}
+      scaleTo={0.94}
       accessibilityRole="button"
-      style={({ pressed }) => [
-        styles.photoButton,
-        { backgroundColor: theme.backgroundSelected, borderColor: theme.border, opacity: pressed ? 0.7 : 1 },
-      ]}>
-      <Ionicons name={icon} size={24} color={theme.tint} />
+      style={[styles.photoButton, { backgroundColor: theme.tintSoft, borderColor: theme.border }]}>
+      <View style={[styles.photoButtonIcon, { backgroundColor: theme.backgroundElement }, Shadow.card]}>
+        <Ionicons name={icon} size={22} color={theme.tint} />
+      </View>
       <ThemedText type="smallBold">{label}</ThemedText>
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -325,20 +408,34 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Spacing.two,
   },
+  scanError: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
+  },
+  scanErrorText: {
+    flex: 1,
+  },
   photoButton: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.one,
+    gap: Spacing.two,
     paddingVertical: Spacing.four,
-    borderRadius: Radius.md,
+    borderRadius: Radius.lg,
     borderWidth: StyleSheet.hairlineWidth,
-    borderStyle: 'dashed',
+  },
+  photoButtonIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: Radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   photo: {
     width: '100%',
-    height: 200,
-    borderRadius: Radius.md,
+    height: 250,
+    borderRadius: Radius.lg,
   },
   removePhoto: {
     position: 'absolute',

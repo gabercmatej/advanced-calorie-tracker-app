@@ -1,13 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Tabs, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Appear, PressableScale } from '@/components/motion';
 import { ThemedText } from '@/components/themed-text';
-import { Fonts, Radius, Spacing } from '@/constants/theme';
+import { Fonts, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useDiary } from '@/context/DiaryContext';
+import { useGradients } from '@/hooks/use-gradients';
 import { useTheme } from '@/hooks/use-theme';
+import { haptics } from '@/lib/haptics';
 import { toDateKey } from '@/lib/nutrition';
 
 /**
@@ -17,6 +21,7 @@ import { toDateKey } from '@/lib/nutrition';
  */
 export default function TabsLayout() {
   const theme = useTheme();
+  const gradients = useGradients();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { selectedDate } = useDiary();
@@ -26,6 +31,7 @@ export default function TabsLayout() {
 
   // Log against the day Home is focused on, so the + works from a past day too.
   function go(path: '/add' | '/log-weight') {
+    haptics.light();
     setMenuOpen(false);
     const suffix = selectedDate && selectedDate !== toDateKey() ? `?date=${selectedDate}` : '';
     router.push(`${path}${suffix}` as typeof path);
@@ -41,8 +47,11 @@ export default function TabsLayout() {
           tabBarStyle: {
             backgroundColor: theme.backgroundElement,
             borderTopColor: theme.border,
+            height: (Platform.OS === 'web' ? 64 : 56) + insets.bottom,
+            paddingTop: 6,
           },
-          tabBarLabelStyle: { fontFamily: Fonts?.sans },
+          tabBarLabelStyle: { fontFamily: Fonts?.sans, fontSize: 11, fontWeight: '600' },
+          tabBarItemStyle: { paddingVertical: 4 },
         }}>
         <Tabs.Screen
           name="index"
@@ -83,34 +92,33 @@ export default function TabsLayout() {
       {/* Action menu — shown above the + button */}
       {menuOpen && (
         <View style={[styles.menu, { bottom: fabBottom + 70 }]}>
-          <MenuAction
-            icon="restaurant"
-            label="Log food"
-            onPress={() => go('/add')}
-          />
-          <MenuAction
-            icon="scale"
-            label="Log weight"
-            onPress={() => go('/log-weight')}
-          />
+          <Appear delay={0}>
+            <MenuAction icon="restaurant" label="Log food" onPress={() => go('/add')} />
+          </Appear>
+          <Appear delay={60}>
+            <MenuAction icon="scale" label="Log weight" onPress={() => go('/log-weight')} />
+          </Appear>
         </View>
       )}
 
       {/* Floating add button */}
-      <Pressable
-        onPress={() => setMenuOpen((o) => !o)}
+      <PressableScale
+        onPress={() => {
+          haptics.medium();
+          setMenuOpen((o) => !o);
+        }}
+        scaleTo={0.9}
         accessibilityRole="button"
         accessibilityLabel={menuOpen ? 'Close menu' : 'Add'}
-        style={({ pressed }) => [
-          styles.fab,
-          {
-            backgroundColor: theme.tint,
-            bottom: fabBottom,
-            opacity: pressed ? 0.9 : 1,
-          },
-        ]}>
-        <Ionicons name={menuOpen ? 'close' : 'add'} size={30} color={theme.onTint} />
-      </Pressable>
+        style={[styles.fab, { bottom: fabBottom }, Shadow.glow(theme.tint)]}>
+        <LinearGradient
+          colors={gradients.brand}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.fabFill}>
+          <Ionicons name={menuOpen ? 'close' : 'add'} size={30} color="#FFFFFF" />
+        </LinearGradient>
+      </PressableScale>
     </View>
   );
 }
@@ -125,24 +133,23 @@ function MenuAction({
   onPress: () => void;
 }) {
   const theme = useTheme();
+  const gradients = useGradients();
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
+      scaleTo={0.94}
       accessibilityRole="button"
       accessibilityLabel={label}
-      style={({ pressed }) => [
-        styles.menuItem,
-        {
-          backgroundColor: theme.backgroundElement,
-          borderColor: theme.border,
-          opacity: pressed ? 0.85 : 1,
-        },
-      ]}>
+      style={[styles.menuItem, { backgroundColor: theme.backgroundElement, borderColor: theme.border }, Shadow.raised]}>
       <ThemedText type="smallBold">{label}</ThemedText>
-      <View style={[styles.menuIcon, { backgroundColor: theme.tint }]}>
-        <Ionicons name={icon} size={18} color={theme.onTint} />
-      </View>
-    </Pressable>
+      <LinearGradient
+        colors={gradients.brand}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.menuIcon}>
+        <Ionicons name={icon} size={18} color="#FFFFFF" />
+      </LinearGradient>
+    </PressableScale>
   );
 }
 
@@ -151,13 +158,17 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 20,
-    width: 58,
-    height: 58,
+    width: 62,
+    height: 62,
+    borderRadius: Radius.full,
+  },
+  fabFill: {
+    width: '100%',
+    height: '100%',
     borderRadius: Radius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    boxShadow: '0px 4px 8px rgba(0, 0, 0, 0.2)',
-    elevation: 6,
+    overflow: 'hidden',
   },
   menu: {
     position: 'absolute',
@@ -174,8 +185,6 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.one,
     borderRadius: Radius.full,
     borderWidth: StyleSheet.hairlineWidth,
-    boxShadow: '0px 2px 6px rgba(0, 0, 0, 0.15)',
-    elevation: 4,
   },
   menuIcon: {
     width: 34,

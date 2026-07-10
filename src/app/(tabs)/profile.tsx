@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
 import { Alert, Platform, StyleSheet, Switch, View } from 'react-native';
 
@@ -6,10 +7,12 @@ import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { DateField } from '@/components/date-field';
 import { Field } from '@/components/field';
+import { Appear } from '@/components/motion';
 import { Screen } from '@/components/screen';
 import { Segmented } from '@/components/segmented';
 import { ThemedText } from '@/components/themed-text';
-import { Spacing, Radius } from '@/constants/theme';
+import { Spacing, Radius, Shadow } from '@/constants/theme';
+import { useGradients } from '@/hooks/use-gradients';
 import { useAuth } from '@/context/AuthContext';
 import { useDiary } from '@/context/DiaryContext';
 import { useTheme } from '@/hooks/use-theme';
@@ -46,6 +49,7 @@ function notify(msg: string) {
 
 export default function ProfileScreen() {
   const theme = useTheme();
+  const gradients = useGradients();
   const { session, signOut } = useAuth();
   const { profile, updateGoals, setUnits, setTheme, completeOnboarding, setNotificationsEnabled } =
     useDiary();
@@ -124,55 +128,66 @@ export default function ProfileScreen() {
   return (
     <Screen title="Profile" subtitle="Your account and goals">
       {/* Account */}
-      <Card>
-        <View style={styles.account}>
-          <View style={[styles.avatar, { backgroundColor: theme.tint }]}>
-            <ThemedText type="title" style={[styles.avatarText, { color: theme.onTint }]}>
-              {(session?.name ?? profile.name).charAt(0).toUpperCase()}
-            </ThemedText>
-          </View>
-          <View style={styles.accountInfo}>
-            <ThemedText type="smallBold" style={styles.accountName}>
-              {session?.name ?? profile.name}
-            </ThemedText>
-            {session?.email ? (
-              <ThemedText type="small" themeColor="textSecondary">
-                {session.email}
+      <Appear delay={60}>
+        <Card variant="raised">
+          <View style={styles.account}>
+            <LinearGradient
+              colors={gradients.brand}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[styles.avatar, Shadow.glow(theme.tint)]}>
+              <ThemedText type="title" style={styles.avatarText}>
+                {(session?.name ?? profile.name).charAt(0).toUpperCase()}
               </ThemedText>
-            ) : null}
+            </LinearGradient>
+            <View style={styles.accountInfo}>
+              <ThemedText type="smallBold" style={styles.accountName}>
+                {session?.name ?? profile.name}
+              </ThemedText>
+              {session?.email ? (
+                <ThemedText type="small" themeColor="textSecondary">
+                  {session.email}
+                </ThemedText>
+              ) : null}
+            </View>
           </View>
-        </View>
-        <Button title="Log out" variant="secondary" onPress={onSignOut} />
-      </Card>
+          <Button title="Log out" icon="log-out-outline" variant="secondary" onPress={onSignOut} />
+        </Card>
+      </Appear>
 
       {/* Appearance */}
-      <Card>
-        <ThemedText type="smallBold">Appearance</ThemedText>
-        <Segmented
-          value={profile.theme}
-          onChange={(t: ThemePreference) => setTheme(t)}
-          options={[
-            { value: 'light', label: 'Light' },
-            { value: 'dark', label: 'Dark' },
-          ]}
-        />
-      </Card>
+      <Appear delay={110}>
+        <Card>
+          <ThemedText type="smallBold">Appearance</ThemedText>
+          <Segmented
+            value={profile.theme}
+            onChange={(t: ThemePreference) => setTheme(t)}
+            options={[
+              { value: 'light', label: 'Light' },
+              { value: 'dark', label: 'Dark' },
+            ]}
+          />
+        </Card>
+      </Appear>
 
       {/* Units */}
-      <Card>
-        <ThemedText type="smallBold">Units</ThemedText>
-        <Segmented
-          value={profile.units}
-          onChange={(u: UnitSystem) => setUnits(u)}
-          options={[
-            { value: 'metric', label: 'Metric (kg, cm)' },
-            { value: 'imperial', label: 'Imperial (lb, ft)' },
-          ]}
-        />
-      </Card>
+      <Appear delay={150}>
+        <Card>
+          <ThemedText type="smallBold">Units</ThemedText>
+          <Segmented
+            value={profile.units}
+            onChange={(u: UnitSystem) => setUnits(u)}
+            options={[
+              { value: 'metric', label: 'Metric (kg, cm)' },
+              { value: 'imperial', label: 'Imperial (lb, ft)' },
+            ]}
+          />
+        </Card>
+      </Appear>
 
       {/* Reminders */}
-      <Card>
+      <Appear delay={190}>
+        <Card>
         <View style={styles.toggleRow}>
           <View style={styles.toggleText}>
             <ThemedText type="smallBold">Streak reminders</ThemedText>
@@ -191,28 +206,32 @@ export default function ProfileScreen() {
             Notifications are only available on the iOS and Android apps.
           </ThemedText>
         )}
-      </Card>
+        </Card>
+      </Appear>
 
       {/* Daily target */}
-      <Card>
-        <ThemedText type="subtitle" style={styles.cardTitle}>
-          Daily target
-        </ThemedText>
-        <Field
-          label="Calorie goal"
-          value={calories}
-          onChangeText={setCalories}
-          keyboardType="number-pad"
-          suffix="kcal"
-        />
-        <ThemedText type="small" themeColor="textSecondary">
-          Macro split: {macros.protein}g P · {macros.carbs}g C · {macros.fat}g F
-        </ThemedText>
-        <Button title="Save goal" onPress={onSaveCalories} />
-      </Card>
+      <Appear delay={230}>
+        <Card>
+          <ThemedText type="subtitle" style={styles.cardTitle}>
+            Daily target
+          </ThemedText>
+          <Field
+            label="Calorie goal"
+            value={calories}
+            onChangeText={setCalories}
+            keyboardType="number-pad"
+            suffix="kcal"
+          />
+          <ThemedText type="small" themeColor="textSecondary">
+            Macro split: {macros.protein}g P · {macros.carbs}g C · {macros.fat}g F
+          </ThemedText>
+          <Button title="Save goal" icon="checkmark" onPress={onSaveCalories} />
+        </Card>
+      </Appear>
 
       {/* Recalculate plan */}
       {metrics && (
+        <Appear delay={270}>
         <Card>
           <ThemedText type="subtitle" style={styles.cardTitle}>
             Recalculate plan
@@ -297,23 +316,27 @@ export default function ProfileScreen() {
 
           <Button
             title="Recalculate my plan"
+            icon="sparkles"
             onPress={onRecalculate}
             disabled={wantsTarget && isCustomDate && !customDate}
           />
         </Card>
+        </Appear>
       )}
 
       {/* About */}
-      <Card>
-        <ThemedText type="subtitle" style={styles.cardTitle}>
-          About
-        </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          CalAI food estimates come from an on-device heuristic in{' '}
-          <ThemedText type="code">src/lib/ai.ts</ThemedText>. Swap it for your own vision-model
-          backend to power real photo analysis.
-        </ThemedText>
-      </Card>
+      <Appear delay={310}>
+        <Card>
+          <ThemedText type="subtitle" style={styles.cardTitle}>
+            About
+          </ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            CalAI food estimates come from an on-device heuristic in{' '}
+            <ThemedText type="code">src/lib/ai.ts</ThemedText>. Swap it for your own vision-model
+            backend to power real photo analysis.
+          </ThemedText>
+        </Card>
+      </Appear>
     </Screen>
   );
 }
@@ -325,8 +348,8 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
   avatar: {
-    width: 56,
-    height: 56,
+    width: 60,
+    height: 60,
     borderRadius: Radius.full,
     alignItems: 'center',
     justifyContent: 'center',
@@ -334,6 +357,7 @@ const styles = StyleSheet.create({
   avatarText: {
     fontSize: 26,
     lineHeight: 32,
+    color: '#FFFFFF',
   },
   accountInfo: {
     flex: 1,

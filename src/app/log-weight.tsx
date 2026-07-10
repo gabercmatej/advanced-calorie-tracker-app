@@ -4,8 +4,10 @@ import { useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AmbientBackground } from '@/components/ambient-background';
 import { Button } from '@/components/button';
 import { DateField } from '@/components/date-field';
+import { Appear } from '@/components/motion';
 import { Segmented } from '@/components/segmented';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -61,6 +63,7 @@ export default function LogWeightScreen() {
 
   return (
     <ThemedView style={styles.flex}>
+      <AmbientBackground />
       <View
         style={[
           styles.header,
@@ -75,7 +78,7 @@ export default function LogWeightScreen() {
       </View>
 
       <View style={styles.content}>
-        <View style={styles.column}>
+        <Appear style={styles.column}>
           <WeightPicker value={value} unit={unit} onChange={setValue} onToggleUnit={toggleUnit} />
 
           <View style={styles.dateSection}>
@@ -94,8 +97,8 @@ export default function LogWeightScreen() {
             )}
           </View>
 
-          <Button title="Save weight" onPress={onSave} disabled={!canSave} />
-        </View>
+          <Button title="Save weight" icon="checkmark" onPress={onSave} disabled={!canSave} />
+        </Appear>
       </View>
     </ThemedView>
   );

@@ -1,4 +1,4 @@
-# CalAI 🍎
+# CalorieTrackerAI 🍎
 
 An AI-assisted calorie & macro tracking app built with **Expo** + **React Native**.
 Runs on **iOS, Android, and web** from a single codebase.

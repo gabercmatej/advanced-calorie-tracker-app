@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "calai-tmp",
-    "slug": "calai-tmp",
+    "name": "CalAI",
+    "slug": "calai",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "calaitmp",
+    "scheme": "calai",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon"
@@ -28,11 +28,19 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#22C55E",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
-      ]
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "CalAI uses your photos to log meals you've already taken.",
+          "cameraPermission": "CalAI uses the camera to take photos of your meals for calorie estimation."
+        }
+      ],
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true,

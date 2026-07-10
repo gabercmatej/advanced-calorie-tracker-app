@@ -1,14 +1,14 @@
 /**
- * Learn more about light and dark modes:
+ * Resolve the active theme's color tokens.
+ *
+ * The effective scheme comes from `ResolvedThemeProvider`, which combines the
+ * user's Light/Dark/System preference with the device setting. Learn more:
  * https://docs.expo.dev/guides/color-schemes/
  */
 
 import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useResolvedScheme } from '@/context/ThemeContext';
 
 export function useTheme() {
-  const scheme = useColorScheme();
-  const theme = scheme === 'unspecified' ? 'light' : scheme;
-
-  return Colors[theme];
+  return Colors[useResolvedScheme()];
 }

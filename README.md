@@ -1,56 +1,78 @@
-# Welcome to your Expo app 👋
+# CalAI 🍎
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+An AI-assisted calorie & macro tracking app built with **Expo** + **React Native**.
+Runs on **iOS, Android, and web** from a single codebase.
 
 ## Get started
 
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
 ```bash
-npm run reset-project
+npm install        # already done during scaffolding
+npx expo start     # then press i (iOS), a (Android), or w (web)
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Other scripts:
 
-### Other setup steps
+```bash
+npm run ios        # open iOS simulator
+npm run android    # open Android emulator
+npm run web        # open in the browser
+npm run lint       # expo lint
+npx tsc --noEmit   # type-check
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+## What's in the box
 
-## Learn more
+- **Expo Router** file-based routing with a bottom tab bar (Today · Log · Insights · Profile).
+- **Light & dark mode** via design tokens in [`src/constants/theme.ts`](src/constants/theme.ts).
+- **Local persistence** — logged meals and goals survive restarts (AsyncStorage).
+- **AI food estimation** — describe a meal in plain text and get a calorie/macro estimate.
+- **Zero native config needed** to start — works in Expo Go and the browser.
 
-To learn more about developing your project with Expo, look at the following resources:
+## Project structure
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+```
+src/
+├── app/                      # Routes (Expo Router)
+│   ├── _layout.tsx           # Root: providers, splash, stack
+│   ├── +not-found.tsx        # 404 route
+│   └── (tabs)/               # Bottom tab group
+│       ├── _layout.tsx       # Tab bar definition
+│       ├── index.tsx         # Today — dashboard & meal list
+│       ├── log.tsx           # Log — AI-assisted food entry
+│       ├── insights.tsx      # Insights — 7-day trends
+│       └── profile.tsx       # Profile — goals & preferences
+├── components/               # Reusable UI (Card, Button, Screen, ProgressBar…)
+├── context/DiaryContext.tsx  # App state + persistence
+├── lib/
+│   ├── ai.ts                 # 👉 Food estimation — swap for a real model backend
+│   ├── nutrition.ts          # Calorie/macro math helpers
+│   └── storage.ts            # Typed AsyncStorage wrapper
+├── constants/theme.ts        # Colors, spacing, radii, fonts
+├── hooks/                    # useTheme, useColorScheme
+└── types/index.ts            # Domain types (FoodEntry, Goals, …)
+```
 
-## Join the community
+## Wiring up real AI
 
-Join our community of developers creating universal apps.
+The estimator in [`src/lib/ai.ts`](src/lib/ai.ts) ships as an offline heuristic so the
+app runs with no setup. To use a real model, replace the body of `estimateFood()`
+with a call to a backend you control:
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```ts
+const res = await fetch(`${API_BASE}/estimate`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ description }),
+});
+return (await res.json()) as FoodEstimate;
+```
+
+Have that server prompt an LLM to return strict JSON matching `FoodEstimate`.
+**Never ship a provider API key in the app** — always proxy through your server.
+
+## Next steps
+
+- Add a barcode / photo capture flow (`expo-camera`) to the Log screen.
+- Persist to a backend so data syncs across devices.
+- Add auth (`expo-auth-session`) and per-user goals.
+- Replace the bar chart in Insights with `react-native-svg` for richer visuals.

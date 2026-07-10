@@ -3,6 +3,23 @@
 An AI-assisted calorie & macro tracking app built with **Expo** + **React Native**.
 Runs on **iOS, Android, and web** from a single codebase.
 
+A **premium, dark-first UI** with fluid spring animations, gradient accents,
+animated progress rings, and delightful micro-interactions throughout.
+
+## 📱 Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/welcome.png"  alt="Welcome"  width="23%">
+  &nbsp;
+  <img src="docs/screenshots/home.png"     alt="Home — today's dashboard"  width="23%">
+  &nbsp;
+  <img src="docs/screenshots/progress.png" alt="Progress — weight trends"  width="23%">
+  &nbsp;
+  <img src="docs/screenshots/profile.png"  alt="Profile — goals & settings"  width="23%">
+</p>
+
+<p align="center"><sub><b>Welcome</b> · <b>Home</b> dashboard with animated calorie ring &amp; floating nutrient chips · <b>Progress</b> weight trends &amp; adaptive plan · <b>Profile</b> settings</sub></p>
+
 ## Get started
 
 ```bash
@@ -32,7 +49,7 @@ and a Supabase project (below) to unlock real AI estimates and cloud sync.
 - **Barcode scanning** — scan a packaged product's barcode for exact, label-sourced nutrition (via the free [Open Food Facts](https://world.openfoodfacts.org) database). More accurate than a photo guess for anything with a label.
 - **Weight tracking** with an SVG trend chart and projection toward your goal.
 - **Accounts & cloud sync** — optional Supabase email/password auth; meals, weights, and compressed meal photos sync per-user across devices (local-only until configured).
-- **Light & dark mode** via design tokens in [`src/constants/theme.ts`](src/constants/theme.ts).
+- **Premium, motion-rich design** — a dark-first theme with an indigo→violet brand gradient, layered gradient cards, animated calorie rings, smoothly-filling macro bars, shimmer loading states, confetti on streak milestones, and haptic feedback. All colors/gradients/shadows live as tokens in [`src/constants/theme.ts`](src/constants/theme.ts); light & dark are both first-class.
 - **Streak reminders** — optional local notifications (no-ops on web).
 
 ## Project structure

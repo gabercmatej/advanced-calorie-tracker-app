@@ -1,12 +1,16 @@
 # CalorieTrackerAI 🍎
 
-An AI-assisted calorie & macro tracking app built with **Expo** + **React Native**.
+A personal AI-powered calorie & macro tracker I built as my own alternative to Cal AI.
+I wanted the same experience without paying a yearly subscription, so I created an app that costs less than €1/month to run while still providing accurate AI-powered food analysis.
+Beyond photo recognition, you can improve estimates by adding a meal description, scan barcodes for exact nutrition data, and follow an adaptive calorie and macro plan that evolves with your goals and progress.
+
+Built with **Expo** + **React Native**.
 Runs on **iOS, Android, and web** from a single codebase.
 
 A **premium, dark-first UI** with fluid spring animations, gradient accents,
 animated progress rings, and delightful micro-interactions throughout.
 
-## 📱 Screenshots
+## 📱 The interface
 
 <p align="center">
   <img src="docs/screenshots/welcome.png"  alt="Welcome"  width="23%">

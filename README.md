@@ -11,6 +11,17 @@ A **premium, dark-first UI** built around a focused emerald accent on flat
 near-black surfaces — fluid spring animations, animated progress rings, and
 delightful micro-interactions throughout.
 
+## 🌐 Live demo
+
+**Try it in your browser → [calorie-tracker-ai-demo.vercel.app](https://calorie-tracker-ai-demo.vercel.app)**
+
+> ⚠️ **This is a demo build.** AI food estimation runs on an **offline keyword
+> heuristic** — the deployed demo ships with **no API key**, so photo/description
+> estimates are approximate placeholders, not real vision-model results. To get
+> genuine AI-powered analysis, clone the repo and add your own Anthropic API key
+> (see [Configuration](#configuration) below). Data is stored locally in your
+> browser and is not synced anywhere.
+
 ## 📱 The interface
 
 <p align="center">

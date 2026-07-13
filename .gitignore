@@ -45,3 +45,4 @@ example
 
 # web demo deploy staging
 .web-demo-deploy/
+.web-demo-project

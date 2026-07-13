@@ -51,7 +51,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "deploy:web-demo": "bash scripts/deploy-web-demo.sh"
   },
   "private": true
 }

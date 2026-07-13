@@ -1,4 +1,4 @@
-# CalorieTrackerAI 🍎
+# CalorieTracker AI 🍎
 
 A personal AI-powered calorie & macro tracker I built as my own alternative to Cal AI.
 I wanted the same experience without paying a yearly subscription, so I created an app that costs less than €1/month to run while still providing accurate AI-powered food analysis.

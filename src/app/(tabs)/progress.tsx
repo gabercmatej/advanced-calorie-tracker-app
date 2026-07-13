@@ -9,14 +9,17 @@ import { GradientCard } from '@/components/gradient-card';
 import { Appear, CountUp, PressableScale } from '@/components/motion';
 import { ProgressBar } from '@/components/progress-bar';
 import { Screen } from '@/components/screen';
+import { StreakBadge } from '@/components/streak-badge';
 import { ThemedText } from '@/components/themed-text';
 import { WeightChart } from '@/components/weight-chart';
-import { Radius, Shadow, Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useDiary } from '@/context/DiaryContext';
 import { useGradients } from '@/hooks/use-gradients';
 import { useTheme } from '@/hooks/use-theme';
 import { haptics } from '@/lib/haptics';
 import {
+  addDays,
+  daysBetween,
   fromDateKey,
   kgToLb,
   latestWeight,
@@ -24,15 +27,17 @@ import {
   toDateKey,
   weightProjection,
 } from '@/lib/nutrition';
-import type { UnitSystem } from '@/types';
+import type { UnitSystem, WeightEntry } from '@/types';
 
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+/** Trailing window (days) behind the Weekly Avg / Days Logged tiles. */
+const TREND_WINDOW_DAYS = 30;
 
 export default function ProgressScreen() {
   const theme = useTheme();
   const gradients = useGradients();
   const router = useRouter();
-  const { profile, weights, streak, recommendation } = useDiary();
+  const { profile, weights, streak, recommendation, loggedDates } = useDiary();
   const units = profile.units;
   const metrics = profile.metrics;
 
@@ -56,17 +61,37 @@ export default function ProgressScreen() {
   const unitLabel = units === 'imperial' ? 'lb' : 'kg';
   const disp = (kg: number) => (units === 'imperial' ? kgToLb(kg) : kg);
 
+  // --- Trend stats over the trailing window ---
+  const today = toDateKey();
+  const windowStart = addDays(today, -TREND_WINDOW_DAYS);
+  const weeklyAvgKg = weeklyRate(sorted, windowStart);
+  const daysLogged = [...loggedDates].filter((d) => d > windowStart && d <= today).length;
+
+  // Projected finish, extrapolated from the observed velocity.
+  let finishDate: string | null = null;
+  if (latest && metrics?.targetWeightKg != null && weeklyAvgKg != null) {
+    const toGo = metrics.targetWeightKg - latest.weightKg;
+    // Only project when actually moving toward the goal.
+    if (Math.abs(toGo) > 0.05 && Math.sign(toGo) === Math.sign(weeklyAvgKg)) {
+      const days = Math.round((toGo / weeklyAvgKg) * 7);
+      if (days > 0 && days < 366 * 2) finishDate = addDays(today, days);
+    }
+  }
+
+  const totalChangeKg = start && latest && start.date !== latest.date ? latest.weightKg - start.weightKg : null;
+
   return (
     <Screen
+      brand
       title="Progress"
       subtitle="Your weight and nutrition trends"
-      headerRight={streak > 0 ? <StreakBadge days={streak} /> : undefined}>
-      {/* Weight */}
+      headerRight={<StreakBadge days={streak} />}>
+      {/* Current weight + goal progress */}
       <Appear delay={80}>
         <GradientCard variant="raised">
           <View style={styles.weightHead}>
             <View>
-              <ThemedText type="small" themeColor="textSecondary">
+              <ThemedText type="small" themeColor="textSecondary" style={styles.tileLabel}>
                 Current weight
               </ThemedText>
               {latest ? (
@@ -93,7 +118,7 @@ export default function ProgressScreen() {
                 </View>
               )}
             </View>
-            <Button title="Log weight" icon="add" variant="secondary" onPress={() => router.push('/log-weight')} style={styles.logBtn} />
+            <Button title="Log weight" icon="add" onPress={() => router.push('/log-weight')} style={styles.logBtn} />
           </View>
 
           {goalPct !== null && (
@@ -107,23 +132,146 @@ export default function ProgressScreen() {
               <ProgressBar value={goalPct} gradient={gradients.brand} height={12} />
             </View>
           )}
+        </GradientCard>
+      </Appear>
 
+      {/* Weekly average + days logged */}
+      <Appear delay={120} style={styles.tileRow}>
+        <StatTile
+          icon="trending-down"
+          label="Weekly Avg"
+          value={
+            weeklyAvgKg != null
+              ? `${weeklyAvgKg > 0 ? '+' : ''}${disp(weeklyAvgKg).toFixed(1)} ${unitLabel}`
+              : '—'
+          }
+          tone={weeklyAvgKg != null && weeklyAvgKg < 0 ? 'tint' : 'text'}
+        />
+        <StatTile icon="calendar-outline" label="Days Logged" value={`${daysLogged}/${TREND_WINDOW_DAYS}`} />
+      </Appear>
+
+      {/* Weight history chart */}
+      <Appear delay={160}>
+        <GradientCard>
+          <ThemedText type="subtitle" style={styles.cardTitle}>
+            Weight History
+          </ThemedText>
           <WeightChart actual={weights} projection={projection} units={units} />
         </GradientCard>
       </Appear>
 
       {/* Adaptive, muscle-sparing calorie plan (cutters only) */}
       {recommendation && (
-        <Appear delay={140}>
+        <Appear delay={200}>
           <AdaptiveGoalCard plan={recommendation} units={units} />
         </Appear>
       )}
 
+      {/* Projected finish / total loss / streak */}
+      {finishDate && (
+        <Appear delay={240}>
+          <GradientCard contentStyle={[styles.factCard, { borderLeftColor: theme.tint, borderLeftWidth: 3 }]}>
+            <ThemedText type="small" themeColor="textSecondary" style={styles.tileLabel}>
+              Projected Finish
+            </ThemedText>
+            <ThemedText type="smallBold" style={styles.factValue}>
+              {longDate(finishDate)}
+            </ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              Based on current velocity
+            </ThemedText>
+          </GradientCard>
+        </Appear>
+      )}
+
+      {totalChangeKg != null && start && (
+        <Appear delay={280}>
+          <GradientCard contentStyle={styles.factCard}>
+            <ThemedText type="small" themeColor="textSecondary" style={styles.tileLabel}>
+              {totalChangeKg <= 0 ? 'Total Loss' : 'Total Gain'}
+            </ThemedText>
+            <ThemedText type="smallBold" style={styles.factValue}>
+              {Math.abs(disp(totalChangeKg)).toFixed(1)} {unitLabel}
+            </ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              Since {longDate(start.date)}
+            </ThemedText>
+          </GradientCard>
+        </Appear>
+      )}
+
+      {streak > 0 && (
+        <Appear delay={320}>
+          <GradientCard contentStyle={styles.factCard}>
+            <View style={styles.factRow}>
+              <View style={styles.factText}>
+                <ThemedText type="small" themeColor="textSecondary" style={styles.tileLabel}>
+                  Streak
+                </ThemedText>
+                <ThemedText type="smallBold" style={[styles.factValue, { color: theme.streak }]}>
+                  {streak} {streak === 1 ? 'Day' : 'Days'}
+                </ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  Perfect logging streak
+                </ThemedText>
+              </View>
+              <Ionicons name="flame" size={36} color={theme.streak} />
+            </View>
+          </GradientCard>
+        </Appear>
+      )}
+
       {/* Nutrition history calendar */}
-      <Appear delay={200}>
+      <Appear delay={360}>
         <CalendarCard />
       </Appear>
     </Screen>
+  );
+}
+
+/**
+ * Average weekly weight change (kg/week) over the trailing window; falls back
+ * to the whole history when the window holds fewer than two weigh-ins.
+ */
+function weeklyRate(sorted: WeightEntry[], windowStart: string): number | null {
+  const recent = sorted.filter((w) => w.date > windowStart);
+  const pts = recent.length >= 2 ? recent : sorted;
+  if (pts.length < 2) return null;
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  const span = daysBetween(first.date, last.date);
+  if (span < 1) return null;
+  return ((last.weightKg - first.weightKg) / span) * 7;
+}
+
+function longDate(key: string): string {
+  return fromDateKey(key).toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
+}
+
+function StatTile({
+  icon,
+  label,
+  value,
+  tone = 'text',
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+  tone?: 'text' | 'tint';
+}) {
+  const theme = useTheme();
+  return (
+    <GradientCard style={styles.tile} contentStyle={styles.tileContent}>
+      <View style={[styles.tileIcon, { backgroundColor: theme.tintSoft }]}>
+        <Ionicons name={icon} size={16} color={theme.tint} />
+      </View>
+      <ThemedText type="small" themeColor="textSecondary" style={styles.tileLabel}>
+        {label}
+      </ThemedText>
+      <ThemedText type="smallBold" style={[styles.tileValue, tone === 'tint' && { color: theme.tint }]}>
+        {value}
+      </ThemedText>
+    </GradientCard>
   );
 }
 
@@ -151,14 +299,14 @@ function AdaptiveGoalCard({
             colors={gradients.brand}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={[styles.planIcon, Shadow.glow(theme.tint)]}>
-            <Ionicons name="sparkles" size={20} color="#FFFFFF" />
+            style={styles.planIcon}>
+            <Ionicons name="sparkles" size={20} color={theme.onTint} />
           </LinearGradient>
           <View style={styles.planHeadText}>
             <ThemedText type="smallBold" style={styles.planCalories}>
               {plan.calories} kcal / day
             </ThemedText>
-            <ThemedText type="small" themeColor="textSecondary">
+            <ThemedText type="small" style={{ color: theme.tint }}>
               {adaptive ? `Tuned to your last ${plan.intakeDays} days` : 'Starting estimate — refines as you log'}
             </ThemedText>
           </View>
@@ -169,8 +317,24 @@ function AdaptiveGoalCard({
             ? `Your maintenance looks like ~${plan.observedTdee} kcal. We target ${rate}/week — a muscle-sparing pace that eases off as you get lighter. Hit ${plan.proteinG} g protein to hold onto muscle.`
             : `Aiming for ${rate}/week to protect muscle, with ${plan.proteinG} g protein daily. Log meals and weigh in for ~2 weeks and this target locks onto your real results.`}
         </ThemedText>
+
+        <View style={styles.planChips}>
+          <PlanChip label="High protein" />
+          <PlanChip label="Moderate fat" />
+        </View>
       </GradientCard>
     </>
+  );
+}
+
+function PlanChip({ label }: { label: string }) {
+  const theme = useTheme();
+  return (
+    <View style={[styles.planChip, { backgroundColor: theme.backgroundSelected, borderColor: theme.border }]}>
+      <ThemedText type="small" themeColor="textSecondary" style={styles.planChipText}>
+        {label}
+      </ThemedText>
+    </View>
   );
 }
 
@@ -291,23 +455,6 @@ function CalendarCard() {
   );
 }
 
-function StreakBadge({ days }: { days: number }) {
-  const gradients = useGradients();
-  const theme = useTheme();
-  return (
-    <LinearGradient
-      colors={gradients.streak}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={[styles.streak, Shadow.glow(theme.streak)]}>
-      <Ionicons name="flame" size={16} color="#FFFFFF" />
-      <ThemedText type="smallBold" style={{ color: '#FFFFFF' }}>
-        {days}
-      </ThemedText>
-    </LinearGradient>
-  );
-}
-
 function buildMonthCells(anchor: Date): (string | null)[] {
   const year = anchor.getFullYear();
   const month = anchor.getMonth();
@@ -355,13 +502,55 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  streak: {
+  tileRow: {
+    flexDirection: 'row',
+    gap: Spacing.three,
+  },
+  tile: {
+    flex: 1,
+  },
+  tileContent: {
+    gap: Spacing.one,
+    padding: Spacing.three,
+  },
+  tileIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.one,
+  },
+  tileLabel: {
+    textTransform: 'uppercase',
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 0.8,
+  },
+  tileValue: {
+    fontSize: 20,
+    lineHeight: 26,
+  },
+  cardTitle: {
+    fontSize: 21,
+    lineHeight: 28,
+  },
+  factCard: {
+    gap: Spacing.half,
+  },
+  factValue: {
+    fontSize: 22,
+    lineHeight: 28,
+  },
+  factRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.three,
+  },
+  factText: {
+    flex: 1,
     gap: Spacing.half,
-    paddingVertical: Spacing.one,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Radius.full,
   },
   monthNav: {
     flexDirection: 'row',
@@ -444,6 +633,22 @@ const styles = StyleSheet.create({
   },
   planBody: {
     lineHeight: 20,
+  },
+  planChips: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+  },
+  planChip: {
+    paddingVertical: Spacing.one,
+    paddingHorizontal: Spacing.two,
+    borderRadius: Radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  planChipText: {
+    textTransform: 'uppercase',
+    fontSize: 10,
+    lineHeight: 14,
+    letterSpacing: 0.8,
   },
   detailTitle: {
     fontSize: 21,

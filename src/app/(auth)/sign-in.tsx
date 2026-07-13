@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AmbientBackground } from '@/components/ambient-background';
 import { Button } from '@/components/button';
 import { Field } from '@/components/field';
 import { Appear, PressableScale } from '@/components/motion';
@@ -45,7 +44,6 @@ export default function SignInScreen() {
 
   return (
     <ThemedView style={styles.flex}>
-      <AmbientBackground />
       <View style={[styles.content, { paddingTop: insets.top + Spacing.two }]}>
         <Appear style={styles.column}>
           <Pressable onPress={() => router.back()} hitSlop={10} style={styles.back}>

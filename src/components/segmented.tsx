@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { PressableScale } from '@/components/motion';
 import { ThemedText } from '@/components/themed-text';
-import { Radius, Shadow, Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useGradients } from '@/hooks/use-gradients';
 import { useTheme } from '@/hooks/use-theme';
 import { haptics } from '@/lib/haptics';
@@ -50,7 +50,6 @@ export function Segmented<T extends string>({ options, value, onChange, wrap }: 
                 backgroundColor: selected ? 'transparent' : theme.backgroundSelected,
                 borderColor: selected ? 'transparent' : theme.border,
               },
-              selected && Shadow.glow(theme.tint),
             ]}>
             {selected ? (
               <LinearGradient
@@ -62,7 +61,7 @@ export function Segmented<T extends string>({ options, value, onChange, wrap }: 
             ) : null}
             <ThemedText
               type="smallBold"
-              style={{ color: selected ? '#FFFFFF' : theme.text, textAlign: 'center' }}>
+              style={{ color: selected ? theme.onTint : theme.text, textAlign: 'center' }}>
               {opt.label}
             </ThemedText>
           </PressableScale>

@@ -5,7 +5,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LinearGradient } from 'expo-linear-gradient';
 
-import { AmbientBackground } from '@/components/ambient-background';
 import { Button } from '@/components/button';
 import { CalorieRing } from '@/components/calorie-ring';
 import { Card } from '@/components/card';
@@ -208,7 +207,6 @@ export default function OnboardingScreen() {
 
   return (
     <ThemedView style={styles.flex}>
-      <AmbientBackground />
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         {/* Top bar: back + progress */}
         <View style={[styles.topBar, { paddingTop: insets.top + Spacing.two }]}>
@@ -387,7 +385,7 @@ function Header({ title, subtitle }: { title: string; subtitle?: string }) {
 }
 
 function StepBody(p: StepBodyProps) {
-  const { stepId, theme } = p;
+  const { stepId } = p;
 
   switch (stepId) {
     case 'sex':

@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AmbientBackground } from '@/components/ambient-background';
 import { Appear } from '@/components/motion';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -14,33 +13,52 @@ interface ScreenProps {
   children: ReactNode;
   /** Set false for screens that manage their own scrolling (e.g. FlatList). */
   scroll?: boolean;
-  /** Right-aligned header slot (e.g. a settings button). */
+  /** Right-aligned header slot (e.g. a streak badge). */
   headerRight?: ReactNode;
+  /** Show the one-line "CalorieTracker AI" brand bar above the title (tab screens). */
+  brand?: boolean;
 }
 
 /**
  * Standard screen frame: safe-area aware, centered max-width column, ambient
- * gradient backdrop, and a spring entrance so every screen has motion. Keeps
- * every screen consistent across phones, tablets, and web.
+ * backdrop, and a spring entrance so every screen has motion. Keeps every
+ * screen consistent across phones, tablets, and web.
  */
-export function Screen({ title, subtitle, children, scroll = true, headerRight }: ScreenProps) {
+export function Screen({ title, subtitle, children, scroll = true, headerRight, brand }: ScreenProps) {
   const insets = useSafeAreaInsets();
 
-  const header = title ? (
-    <Appear style={styles.header}>
-      <View style={styles.headerText}>
-        <ThemedText type="title" style={styles.title}>
-          {title}
-        </ThemedText>
-        {subtitle ? (
-          <ThemedText type="default" themeColor="textSecondary">
-            {subtitle}
-          </ThemedText>
+  const header =
+    title || brand ? (
+      <Appear style={styles.headerBlock}>
+        {brand ? (
+          <View style={styles.brandRow}>
+            <ThemedText
+              type="smallBold"
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              style={styles.brandName}>
+              CalorieTracker AI
+            </ThemedText>
+            {headerRight}
+          </View>
         ) : null}
-      </View>
-      {headerRight}
-    </Appear>
-  ) : null;
+        {title ? (
+          <View style={styles.header}>
+            <View style={styles.headerText}>
+              <ThemedText type="title" numberOfLines={1} adjustsFontSizeToFit style={styles.title}>
+                {title}
+              </ThemedText>
+              {subtitle ? (
+                <ThemedText type="default" themeColor="textSecondary">
+                  {subtitle}
+                </ThemedText>
+              ) : null}
+            </View>
+            {!brand ? headerRight : null}
+          </View>
+        ) : null}
+      </Appear>
+    ) : null;
 
   const body = (
     <View style={styles.column}>
@@ -51,7 +69,6 @@ export function Screen({ title, subtitle, children, scroll = true, headerRight }
 
   return (
     <ThemedView style={styles.flex}>
-      <AmbientBackground />
       {scroll ? (
         <ScrollView
           contentContainerStyle={[
@@ -86,6 +103,23 @@ const styles = StyleSheet.create({
     maxWidth: MaxContentWidth,
     gap: Spacing.four,
   },
+  headerBlock: {
+    gap: Spacing.three,
+  },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.three,
+  },
+  brandName: {
+    flexShrink: 1,
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+    fontFamily: Fonts?.sans,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -97,10 +131,10 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
   },
   title: {
-    fontSize: 36,
-    lineHeight: 42,
-    letterSpacing: -0.5,
-    // Serif display face for the main page headings (Home / Progress / Profile).
-    fontFamily: Fonts?.serif,
+    fontSize: 30,
+    lineHeight: 36,
+    letterSpacing: -0.6,
+    fontWeight: '800',
+    fontFamily: Fonts?.sans,
   },
 });

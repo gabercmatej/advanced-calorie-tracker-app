@@ -4,7 +4,7 @@ import { ActivityIndicator, StyleSheet, View, type PressableProps, type StylePro
 
 import { PressableScale } from '@/components/motion';
 import { ThemedText } from '@/components/themed-text';
-import { Radius, Shadow, Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useGradients } from '@/hooks/use-gradients';
 import { useTheme } from '@/hooks/use-theme';
 import { haptics } from '@/lib/haptics';
@@ -15,6 +15,8 @@ interface ButtonProps extends Omit<PressableProps, 'children' | 'style'> {
   loading?: boolean;
   icon?: keyof typeof Ionicons.glyphMap;
   style?: StyleProp<ViewStyle>;
+  /** Fully rounded pill shape (hero CTAs). */
+  pill?: boolean;
 }
 
 /**
@@ -28,13 +30,15 @@ export function Button({
   disabled,
   icon,
   style,
+  pill,
   onPress,
   ...props
 }: ButtonProps) {
   const theme = useTheme();
   const gradients = useGradients();
   const isPrimary = variant === 'primary';
-  const fg = isPrimary ? '#FFFFFF' : theme.text;
+  const radius = pill ? Radius.full : Radius.md;
+  const fg = isPrimary ? theme.onTint : theme.text;
   const isDisabled = disabled || loading;
 
   const inner = (
@@ -62,18 +66,18 @@ export function Button({
         haptics.light();
         onPress?.(e);
       }}
-      style={[styles.button, isDisabled && styles.disabled, style]}
+      style={[styles.button, { borderRadius: radius }, isDisabled && styles.disabled, style]}
       {...props}>
       {isPrimary ? (
         <LinearGradient
           colors={gradients.brand}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={[styles.fill, !isDisabled && Shadow.glow(theme.tint)]}>
+          style={[styles.fill, { borderRadius: radius }]}>
           {inner}
         </LinearGradient>
       ) : (
-        <View style={[styles.fill, { backgroundColor: theme.backgroundSelected, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.border }]}>
+        <View style={[styles.fill, { borderRadius: radius, backgroundColor: theme.backgroundSelected, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.border }]}>
           {inner}
         </View>
       )}

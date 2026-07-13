@@ -15,7 +15,7 @@ import Animated, {
 
 import { Confetti } from '@/components/confetti';
 import { ThemedText } from '@/components/themed-text';
-import { Radius, Shadow, Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useGradients } from '@/hooks/use-gradients';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -72,16 +72,16 @@ export function Celebration({ message, confetti, onDone }: CelebrationProps) {
       <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]} />
       {confetti ? <Confetti /> : null}
       <View style={styles.center}>
-        <Animated.View style={[badgeStyle, Shadow.glow(theme.tint)]}>
+        <Animated.View style={[badgeStyle, styles.badgeWrap]}>
           <LinearGradient
             colors={gradients.brand}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.badge}>
             <Animated.View style={checkStyle}>
-              <Ionicons name="checkmark-circle" size={56} color="#FFFFFF" />
+              <Ionicons name="checkmark-circle" size={56} color={theme.onTint} />
             </Animated.View>
-            <ThemedText type="smallBold" style={styles.message}>
+            <ThemedText type="smallBold" style={[styles.message, { color: theme.onTint }]}>
               {message}
             </ThemedText>
           </LinearGradient>
@@ -104,6 +104,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  badgeWrap: {
+    borderRadius: Radius.xl,
+    overflow: 'hidden',
+  },
   badge: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -115,6 +119,5 @@ const styles = StyleSheet.create({
   },
   message: {
     textAlign: 'center',
-    color: '#FFFFFF',
   },
 });

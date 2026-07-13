@@ -43,7 +43,7 @@ export function ScanOverlay({ height = 250 }: { height?: number }) {
       {/* Sweeping scan beam */}
       <Animated.View style={[styles.beamWrap, beamStyle]}>
         <LinearGradient
-          colors={['transparent', gradients.brand[0], gradients.brand[2] ?? gradients.brand[1], 'transparent']}
+          colors={['transparent', gradients.brand[0], gradients.brand[1], 'transparent']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={styles.beam}

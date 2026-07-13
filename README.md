@@ -7,8 +7,9 @@ Beyond photo recognition, you can improve estimates by adding a meal description
 Built with **Expo** + **React Native**.
 Runs on **iOS, Android, and web** from a single codebase.
 
-A **premium, dark-first UI** with fluid spring animations, gradient accents,
-animated progress rings, and delightful micro-interactions throughout.
+A **premium, dark-first UI** built around a focused emerald accent on flat
+near-black surfaces — fluid spring animations, animated progress rings, and
+delightful micro-interactions throughout.
 
 ## 📱 The interface
 
@@ -53,7 +54,7 @@ and a Supabase project (below) to unlock real AI estimates and cloud sync.
 - **Barcode scanning** — scan a packaged product's barcode for exact, label-sourced nutrition (via the free [Open Food Facts](https://world.openfoodfacts.org) database). More accurate than a photo guess for anything with a label.
 - **Weight tracking** with an SVG trend chart and projection toward your goal.
 - **Accounts & cloud sync** — optional Supabase email/password auth; meals, weights, and compressed meal photos sync per-user across devices (local-only until configured).
-- **Premium, motion-rich design** — a dark-first theme with an indigo→violet brand gradient, layered gradient cards, animated calorie rings, smoothly-filling macro bars, shimmer loading states, confetti on streak milestones, and haptic feedback. All colors/gradients/shadows live as tokens in [`src/constants/theme.ts`](src/constants/theme.ts); light & dark are both first-class.
+- **Premium, motion-rich design** — a dark-first theme built around a focused emerald accent on flat near-black surfaces, animated calorie rings, smoothly-filling macro bars, shimmer loading states, confetti on streak milestones, and haptic feedback. All colors/shadows live as tokens in [`src/constants/theme.ts`](src/constants/theme.ts); light & dark are both first-class.
 - **Streak reminders** — optional local notifications (no-ops on web).
 
 ## Project structure

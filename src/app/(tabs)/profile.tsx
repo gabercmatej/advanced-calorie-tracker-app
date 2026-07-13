@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
 import { Alert, Platform, StyleSheet, Switch, View } from 'react-native';
@@ -11,7 +10,7 @@ import { Appear } from '@/components/motion';
 import { Screen } from '@/components/screen';
 import { Segmented } from '@/components/segmented';
 import { ThemedText } from '@/components/themed-text';
-import { Spacing, Radius, Shadow } from '@/constants/theme';
+import { Spacing, Radius } from '@/constants/theme';
 import { useGradients } from '@/hooks/use-gradients';
 import { useAuth } from '@/context/AuthContext';
 import { useDiary } from '@/context/DiaryContext';
@@ -24,7 +23,6 @@ import {
   macrosFromCalories,
   relativeDayLabel,
   toDateKey,
-  WORKOUT_LABEL,
 } from '@/lib/nutrition';
 import {
   cancelReminders,
@@ -126,7 +124,7 @@ export default function ProfileScreen() {
   }
 
   return (
-    <Screen title="Profile" subtitle="Your account and goals">
+    <Screen brand title="Profile" subtitle="Your account and goals">
       {/* Account */}
       <Appear delay={60}>
         <Card variant="raised">
@@ -135,8 +133,8 @@ export default function ProfileScreen() {
               colors={gradients.brand}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={[styles.avatar, Shadow.glow(theme.tint)]}>
-              <ThemedText type="title" style={styles.avatarText}>
+              style={styles.avatar}>
+              <ThemedText type="title" style={[styles.avatarText, { color: theme.onTint }]}>
                 {(session?.name ?? profile.name).charAt(0).toUpperCase()}
               </ThemedText>
             </LinearGradient>
@@ -158,7 +156,9 @@ export default function ProfileScreen() {
       {/* Appearance */}
       <Appear delay={110}>
         <Card>
-          <ThemedText type="smallBold">Appearance</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary" style={styles.sectionLabel}>
+            Appearance
+          </ThemedText>
           <Segmented
             value={profile.theme}
             onChange={(t: ThemePreference) => setTheme(t)}
@@ -173,7 +173,9 @@ export default function ProfileScreen() {
       {/* Units */}
       <Appear delay={150}>
         <Card>
-          <ThemedText type="smallBold">Units</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary" style={styles.sectionLabel}>
+            Units
+          </ThemedText>
           <Segmented
             value={profile.units}
             onChange={(u: UnitSystem) => setUnits(u)}
@@ -190,7 +192,9 @@ export default function ProfileScreen() {
         <Card>
         <View style={styles.toggleRow}>
           <View style={styles.toggleText}>
-            <ThemedText type="smallBold">Streak reminders</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary" style={styles.sectionLabel}>
+              Streak reminders
+            </ThemedText>
             <ThemedText type="small" themeColor="textSecondary">
               A daily nudge and a cheer when you extend your streak.
             </ThemedText>
@@ -343,28 +347,34 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   account: {
-    flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
+    paddingVertical: Spacing.two,
   },
   avatar: {
-    width: 60,
-    height: 60,
+    width: 84,
+    height: 84,
     borderRadius: Radius.full,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
-    fontSize: 26,
-    lineHeight: 32,
-    color: '#FFFFFF',
+    fontSize: 34,
+    lineHeight: 40,
   },
   accountInfo: {
-    flex: 1,
+    alignItems: 'center',
     gap: 2,
   },
   accountName: {
-    fontSize: 17,
+    fontSize: 20,
+    lineHeight: 26,
+  },
+  sectionLabel: {
+    textTransform: 'uppercase',
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 0.8,
   },
   cardTitle: {
     fontSize: 20,

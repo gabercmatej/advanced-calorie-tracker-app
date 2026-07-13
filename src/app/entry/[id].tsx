@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AmbientBackground } from '@/components/ambient-background';
 import { Button } from '@/components/button';
 import { Field } from '@/components/field';
 import { Appear, PressableScale } from '@/components/motion';
@@ -15,13 +14,11 @@ import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { haptics } from '@/lib/haptics';
 import { useDiary } from '@/context/DiaryContext';
 import { useEntryPhoto } from '@/hooks/use-entry-photo';
-import { useTheme } from '@/hooks/use-theme';
 import { MEAL_TYPES, type MealType } from '@/types';
 
 const MEAL_OPTIONS = MEAL_TYPES.map((m) => ({ value: m, label: m[0].toUpperCase() + m.slice(1) }));
 
 export default function EditEntryScreen() {
-  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -69,7 +66,6 @@ export default function EditEntryScreen() {
 
   return (
     <ThemedView style={styles.flex}>
-      <AmbientBackground />
       <ScrollView
         contentContainerStyle={[
           styles.content,

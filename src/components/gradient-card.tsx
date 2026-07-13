@@ -12,8 +12,6 @@ interface GradientCardProps extends ViewProps {
   colors?: readonly [string, string, ...string[]];
   /** Drop the inner padding (e.g. for full-bleed imagery). */
   flush?: boolean;
-  /** Cast a soft colored glow (used on brand cards). */
-  glow?: string;
   /** Corner radius override. Defaults to 20 (28 for brand heroes). */
   radius?: number;
   /** Style applied to the inner padded content layer (layout, gap, align). */
@@ -29,7 +27,6 @@ export function GradientCard({
   variant = 'surface',
   colors,
   flush,
-  glow,
   radius,
   style,
   contentStyle,
@@ -45,7 +42,7 @@ export function GradientCard({
   const stops: GradientColors =
     colors ?? (isBrand ? gradients.brand : variant === 'raised' ? gradients.cardRaised : gradients.card);
 
-  const shadow = glow ? Shadow.glow(glow) : variant === 'raised' ? Shadow.raised : Shadow.card;
+  const shadow = variant === 'raised' ? Shadow.raised : Shadow.card;
 
   return (
     <View style={[{ borderRadius: r }, shadow, style]} {...props}>

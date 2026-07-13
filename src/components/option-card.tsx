@@ -51,7 +51,7 @@ export function OptionCards<T extends string>({ options, value, onChange }: Opti
                 backgroundColor: selected ? 'transparent' : theme.backgroundElement,
                 borderColor: selected ? 'transparent' : theme.border,
               },
-              selected ? Shadow.glow(theme.tint) : Shadow.card,
+              Shadow.card,
             ]}>
             {selected ? (
               <LinearGradient
@@ -62,23 +62,23 @@ export function OptionCards<T extends string>({ options, value, onChange }: Opti
               />
             ) : null}
             {opt.icon ? (
-              <View style={[styles.iconWrap, { backgroundColor: selected ? 'rgba(255,255,255,0.18)' : theme.tintSoft }]}>
-                <Ionicons name={opt.icon} size={20} color={selected ? '#FFFFFF' : theme.tint} />
+              <View style={[styles.iconWrap, { backgroundColor: selected ? 'rgba(0,0,0,0.12)' : theme.tintSoft }]}>
+                <Ionicons name={opt.icon} size={20} color={selected ? theme.onTint : theme.tint} />
               </View>
             ) : null}
             <View style={styles.text}>
-              <ThemedText type="smallBold" style={{ color: selected ? '#FFFFFF' : theme.text, fontSize: 16 }}>
+              <ThemedText type="smallBold" style={{ color: selected ? theme.onTint : theme.text, fontSize: 16 }}>
                 {opt.label}
               </ThemedText>
               {opt.hint ? (
                 <ThemedText
                   type="small"
-                  style={{ color: selected ? '#FFFFFF' : theme.textSecondary, opacity: selected ? 0.9 : 1 }}>
+                  style={{ color: selected ? theme.onTint : theme.textSecondary, opacity: selected ? 0.85 : 1 }}>
                   {opt.hint}
                 </ThemedText>
               ) : null}
             </View>
-            {selected ? <Ionicons name="checkmark-circle" size={24} color="#FFFFFF" /> : null}
+            {selected ? <Ionicons name="checkmark-circle" size={24} color={theme.onTint} /> : null}
           </PressableScale>
         );
       })}

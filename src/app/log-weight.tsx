@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AmbientBackground } from '@/components/ambient-background';
 import { Button } from '@/components/button';
 import { DateField } from '@/components/date-field';
 import { Appear } from '@/components/motion';
@@ -63,7 +62,6 @@ export default function LogWeightScreen() {
 
   return (
     <ThemedView style={styles.flex}>
-      <AmbientBackground />
       <View
         style={[
           styles.header,

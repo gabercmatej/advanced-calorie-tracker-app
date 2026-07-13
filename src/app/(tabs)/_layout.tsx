@@ -110,13 +110,13 @@ export default function TabsLayout() {
         scaleTo={0.9}
         accessibilityRole="button"
         accessibilityLabel={menuOpen ? 'Close menu' : 'Add'}
-        style={[styles.fab, { bottom: fabBottom }, Shadow.glow(theme.tint)]}>
+        style={[styles.fab, { bottom: fabBottom }, Shadow.floating]}>
         <LinearGradient
           colors={gradients.brand}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.fabFill}>
-          <Ionicons name={menuOpen ? 'close' : 'add'} size={30} color="#FFFFFF" />
+          <Ionicons name={menuOpen ? 'close' : 'add'} size={30} color={theme.onTint} />
         </LinearGradient>
       </PressableScale>
     </View>
@@ -147,7 +147,7 @@ function MenuAction({
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.menuIcon}>
-        <Ionicons name={icon} size={18} color="#FFFFFF" />
+        <Ionicons name={icon} size={18} color={theme.onTint} />
       </LinearGradient>
     </PressableScale>
   );

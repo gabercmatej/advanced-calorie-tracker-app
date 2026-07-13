@@ -9,6 +9,7 @@ import { GradientCard } from '@/components/gradient-card';
 import { MacroRow } from '@/components/macro-row';
 import { Appear, CountUp, Floating, PressableScale } from '@/components/motion';
 import { Screen } from '@/components/screen';
+import { StreakBadge } from '@/components/streak-badge';
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Shadow, Spacing } from '@/constants/theme';
 import { useDiary } from '@/context/DiaryContext';
@@ -66,9 +67,10 @@ export default function HomeScreen() {
 
   return (
     <Screen
-      title="CalorieTrackerAI"
-      subtitle={`${greeting()}, ${profile.name} 👋`}
-      headerRight={streak > 0 ? <StreakBadge days={streak} /> : undefined}>
+      brand
+      title={`${greeting()}, ${profile.name} 👋`}
+      subtitle="Stay consistent with your goals today."
+      headerRight={<StreakBadge days={streak} />}>
       {/* Week strip — tap any past day to point Home at it (no separate screen) */}
       <Appear delay={60} style={styles.week}>
         {week.map((key) => {
@@ -101,7 +103,6 @@ export default function HomeScreen() {
                     borderColor: isSelected ? theme.tint : met ? 'transparent' : theme.border,
                     borderWidth: isSelected ? 2 : 1.5,
                   },
-                  met && Shadow.glow(theme.tint),
                 ]}>
                 {met ? (
                   <LinearGradient
@@ -113,7 +114,7 @@ export default function HomeScreen() {
                 ) : null}
                 <ThemedText
                   type={isSelected || met ? 'smallBold' : 'small'}
-                  style={{ color: met ? '#FFFFFF' : isFuture ? theme.tabIconDefault : theme.text }}>
+                  style={{ color: met ? theme.onTint : isFuture ? theme.tabIconDefault : theme.text }}>
                   {fromDateKey(key).getDate()}
                 </ThemedText>
               </View>
@@ -208,7 +209,7 @@ export default function HomeScreen() {
         {entries.length > 0 ? (
           <View style={[styles.countPill, { backgroundColor: theme.tintSoft }]}>
             <ThemedText type="small" style={{ color: theme.tint }}>
-              {entries.length}
+              {entries.length} tracked
             </ThemedText>
           </View>
         ) : null}
@@ -333,23 +334,6 @@ function NutrientChip({
   );
 }
 
-function StreakBadge({ days }: { days: number }) {
-  const gradients = useGradients();
-  const theme = useTheme();
-  return (
-    <LinearGradient
-      colors={gradients.streak}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={[styles.streak, Shadow.glow(theme.streak)]}>
-      <Ionicons name="flame" size={16} color="#FFFFFF" />
-      <ThemedText type="smallBold" style={{ color: '#FFFFFF' }}>
-        {days}
-      </ThemedText>
-    </LinearGradient>
-  );
-}
-
 function EntryRow({ entry, first, onPress }: { entry: FoodEntry; first: boolean; onPress: () => void }) {
   const theme = useTheme();
   const photoUri = useEntryPhoto(entry);
@@ -376,7 +360,7 @@ function EntryRow({ entry, first, onPress }: { entry: FoodEntry; first: boolean;
           {entry.name}
         </ThemedText>
         <ThemedText type="small" themeColor="textSecondary" style={styles.entryMeta}>
-          {entry.meal} · {Math.round(entry.calories * entry.quantity)} kcal
+          {entry.meal} · {timeLabel(entry.createdAt)}
           {entry.aiEstimated ? ' · AI' : ''}
         </ThemedText>
         <View style={styles.entryMacros}>
@@ -385,9 +369,21 @@ function EntryRow({ entry, first, onPress }: { entry: FoodEntry; first: boolean;
           <MacroTag color={theme.fat} text={`F ${Math.round(macros.fat * entry.quantity)}g`} />
         </View>
       </View>
+      <View style={styles.entryRight}>
+        <ThemedText type="smallBold" style={[styles.entryKcal, { color: theme.tint }]}>
+          {Math.round(entry.calories * entry.quantity)}
+        </ThemedText>
+        <ThemedText type="small" themeColor="textSecondary" style={styles.entryKcalUnit}>
+          kcal
+        </ThemedText>
+      </View>
       <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
     </PressableScale>
   );
+}
+
+function timeLabel(createdAt: number): string {
+  return new Date(createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
 function MacroTag({ color, text }: { color: string; text: string }) {
@@ -497,14 +493,6 @@ const styles = StyleSheet.create({
   macros: {
     width: '100%',
   },
-  streak: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.half,
-    paddingVertical: Spacing.one,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Radius.full,
-  },
   cardTitle: {
     fontSize: 21,
     lineHeight: 26,
@@ -572,7 +560,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   entryMeta: {
-    textTransform: 'capitalize',
+    textTransform: 'uppercase',
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 0.6,
+  },
+  entryRight: {
+    alignItems: 'flex-end',
+  },
+  entryKcal: {
+    fontSize: 16,
+    lineHeight: 20,
+  },
+  entryKcalUnit: {
+    fontSize: 11,
+    lineHeight: 14,
   },
   entryMacros: {
     flexDirection: 'row',

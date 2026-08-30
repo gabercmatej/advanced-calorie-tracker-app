@@ -8,8 +8,7 @@
     "scheme": "calai",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "bundleIdentifier": "com.gabercmatej.calai",
-      "icon": "./assets/expo.icon"
+      "bundleIdentifier": "com.gabercmatej.calai"
     },
     "android": {
       "adaptiveIcon": {
@@ -49,6 +48,10 @@
         }
       ],
       "expo-sharing",
+      "expo-image",
+      "expo-status-bar",
+      "expo-web-browser",
+      "./plugins/with-space-safe-ios-build",
       "./plugins/with-local-notifications-only"
     ],
     "experiments": {

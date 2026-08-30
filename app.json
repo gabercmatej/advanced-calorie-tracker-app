@@ -48,7 +48,6 @@
           "barcodeScannerEnabled": true
         }
       ],
-      "expo-notifications",
       "expo-sharing",
       "./plugins/with-local-notifications-only"
     ],

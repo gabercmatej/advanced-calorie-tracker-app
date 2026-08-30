@@ -27,13 +27,13 @@ delightful micro-interactions throughout.
 ## 📱 The interface
 
 <p align="center">
-  <img src="docs/screenshots/welcome.png"  alt="Welcome"  width="25%">
+  <img src="docs/screenshots/welcome.png"  alt="Welcome"  width="20%">
   &nbsp;
-  <img src="docs/screenshots/home.png"     alt="Home — today's dashboard"  width="25%">
+  <img src="docs/screenshots/home.png"     alt="Home — today's dashboard"  width="20%">
   &nbsp;
-  <img src="docs/screenshots/progress.png" alt="Progress — weight trends"  width="25%">
+  <img src="docs/screenshots/progress.png" alt="Progress — weight trends"  width="20%">
   &nbsp;
-  <img src="docs/screenshots/food.png"     alt="Food — meal ideas ranked against what's left today"  width="25%">
+  <img src="docs/screenshots/food.png"     alt="Food — meal ideas ranked against what's left today"  width="20%">
 </p>
 
 <p align="center"><sub><b>Welcome</b> · <b>Home</b> dashboard with animated calorie ring &amp; floating nutrient chips · <b>Progress</b> weight trends &amp; adaptive plan · <b>Food</b> meal ideas ranked against the calories &amp; protein you have left · <b>Profile</b> settings</sub></p>

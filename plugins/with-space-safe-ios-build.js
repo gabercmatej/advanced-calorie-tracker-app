@@ -42,7 +42,7 @@ function withQuotedBundlePhase(config) {
 //    word-splits to "CalAI" instead of "Pods" and makes the script exit 0
 //    early — so app.config never lands in EXConstants.bundle and
 //    Constants.expoConfig is null at runtime. Rather than duplicate the
-//    script's logic, run a quoted copy of the pristine upstream file.
+//    script's logic, run it in place with the guard neutralised.
 const POST_INSTALL_HOOK = `
     # Injected by plugins/with-space-safe-ios-build.js — quote paths in generated
     # script phases so a project path containing spaces is not word-split.
@@ -52,11 +52,15 @@ const POST_INSTALL_HOOK = `
         next unless phase.shell_script.include?('get-app-config-ios.sh')
         phase.shell_script = <<~'SPACESAFE'
           set -eo pipefail
-          SRC="$PODS_TARGET_SRCROOT/../scripts/get-app-config-ios.sh"
-          PATCHED="$DERIVED_FILE_DIR/get-app-config-ios.spacesafe.sh"
-          mkdir -p "$DERIVED_FILE_DIR"
-          sed 's/basename \\$PROJECT_DIR/basename "$PROJECT_DIR"/' "$SRC" > "$PATCHED"
-          bash -l "$PATCHED"
+          # Run the pristine upstream script in place — it resolves its own
+          # package directory from BASH_SOURCE, so a copy elsewhere breaks it.
+          # It guards on an unquoted basename of PROJECT_DIR, which word-splits on
+          # a path with a space and exits 0 before generating anything, so hand
+          # the guard a space-free PROJECT_DIR and set PROJECT_ROOT ourselves.
+          if [ -z "$PROJECT_ROOT" ]; then
+            export PROJECT_ROOT="$PROJECT_DIR/../.."
+          fi
+          PROJECT_DIR=Pods bash -l "$PODS_TARGET_SRCROOT/../scripts/get-app-config-ios.sh"
         SPACESAFE
       end
     end

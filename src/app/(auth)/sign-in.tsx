@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,10 +12,11 @@ import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/hooks/use-theme';
+import { useDismiss } from '@/hooks/use-dismiss';
 
 export default function SignInScreen() {
   const theme = useTheme();
-  const router = useRouter();
+  const dismiss = useDismiss('/welcome');
   const insets = useSafeAreaInsets();
   const { signInWithGoogle, signInWithEmail, usesSupabase } = useAuth();
 
@@ -46,7 +47,7 @@ export default function SignInScreen() {
     <ThemedView style={styles.flex}>
       <View style={[styles.content, { paddingTop: insets.top + Spacing.two }]}>
         <Appear style={styles.column}>
-          <Pressable onPress={() => router.back()} hitSlop={10} style={styles.back}>
+          <Pressable onPress={() => dismiss()} hitSlop={10} style={styles.back}>
             <Ionicons name="chevron-back" size={26} color={theme.text} />
           </Pressable>
 

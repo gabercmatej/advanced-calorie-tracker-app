@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,13 +15,14 @@ import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useCelebration } from '@/context/CelebrationContext';
 import { useDiary } from '@/context/DiaryContext';
 import { useTheme } from '@/hooks/use-theme';
+import { useDismiss } from '@/hooks/use-dismiss';
 import { addDays, kgToLb, latestWeight, lbToKg, relativeDayLabel, toDateKey } from '@/lib/nutrition';
 
 type When = 'today' | 'yesterday' | 'custom';
 
 export default function LogWeightScreen() {
   const theme = useTheme();
-  const router = useRouter();
+  const dismiss = useDismiss('/');
   const insets = useSafeAreaInsets();
   const { date } = useLocalSearchParams<{ date?: string }>();
   const { profile, weights, logWeight, weightForDate } = useDiary();
@@ -57,7 +58,7 @@ export default function LogWeightScreen() {
     const kg = unit === 'kg' ? value : lbToKg(value);
     logWeight(Math.round(kg * 10) / 10, targetDate);
     celebrate(targetDate === toDateKey() ? 'Weight logged' : `Weight logged · ${relativeDayLabel(targetDate)}`);
-    router.back();
+    dismiss();
   }
 
   return (
@@ -70,7 +71,7 @@ export default function LogWeightScreen() {
         <ThemedText type="title" style={styles.title}>
           Log weight
         </ThemedText>
-        <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="Close">
+        <Pressable onPress={() => dismiss()} hitSlop={10} accessibilityLabel="Close">
           <Ionicons name="close" size={26} color={theme.text} />
         </Pressable>
       </View>

@@ -20,17 +20,42 @@ cd "$ROOT"
 
 STAGE="$ROOT/.web-demo-deploy"
 
-restore_env() { [ -f "$ROOT/.env.deploybak" ] && mv "$ROOT/.env.deploybak" "$ROOT/.env"; }
+# Expo reads .env, .env.local, .env.production and friends — quarantining only
+# ".env" left the real key file (.env.local) in place, so the "key-free" build
+# was not key-free and only the abort check below stood between the key and a
+# public deploy. Move every env file Expo would load.
+ENV_FILES=(.env .env.local .env.production .env.production.local)
+BAK_DIR="$ROOT/.env-deploybak"
+
+restore_env() {
+  [ -d "$BAK_DIR" ] || return 0
+  for f in "${ENV_FILES[@]}"; do
+    [ -f "$BAK_DIR/$f" ] && mv "$BAK_DIR/$f" "$ROOT/$f"
+  done
+  rmdir "$BAK_DIR" 2>/dev/null || true
+}
 trap restore_env EXIT
 
 echo "==> Building key-free web export"
-[ -f "$ROOT/.env" ] && mv "$ROOT/.env" "$ROOT/.env.deploybak"
+mkdir -p "$BAK_DIR"
+for f in "${ENV_FILES[@]}"; do
+  [ -f "$ROOT/$f" ] && mv "$ROOT/$f" "$BAK_DIR/$f"
+done
 rm -rf "$ROOT/dist"
 npx expo export --platform web --clear
 
-echo "==> Verifying no Anthropic key leaked into the bundle"
+echo "==> Verifying no secrets leaked into the bundle"
+# Belt and braces: even with the env files moved aside, never ship a build that
+# contains an API key or a Supabase secret key.
 if grep -rqE "sk-ant-[a-zA-Z0-9]" "$ROOT/dist"; then
   echo "!!! ABORT: an Anthropic key is present in dist/ — refusing to deploy." >&2
+  exit 1
+fi
+# Match an actual key, not the bare prefix: `src/lib/supabase.ts` contains the
+# string "sb_secret" in the guard that refuses to start with one, so a
+# substring search matches every build and the abort stops meaning anything.
+if grep -rqE "sb_secret_[A-Za-z0-9_-]{8}" "$ROOT/dist"; then
+  echo "!!! ABORT: a Supabase secret key is present in dist/ — refusing to deploy." >&2
   exit 1
 fi
 echo "    clean."

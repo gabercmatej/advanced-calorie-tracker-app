@@ -20,9 +20,10 @@ import Svg, {
 } from 'react-native-svg';
 
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { daysBetween, fromDateKey, kgToLb } from '@/lib/nutrition';
+import { trendSeries } from '@/lib/weight-trend';
 import type { UnitSystem, WeightEntry } from '@/types';
 
 const AnimatedPolyline = Animated.createAnimatedComponent(Polyline);
@@ -42,8 +43,17 @@ const PAD_TOP = 12;
 const PAD_BOTTOM = 22;
 
 /**
- * Weight-over-time chart: a solid line for logged weights and a dashed line
- * for the target trajectory, so users can see actual vs. plan at a glance.
+ * Weight over time.
+ *
+ * The emphasis is deliberately on the *trend*, not the raw readings. Daily
+ * scale noise is larger than a week of real progress, so a bold line through
+ * every reading mostly draws the water: it spikes after a salty dinner and
+ * dips after a long run, and a good week can look like a bad one. Here the
+ * thick line is the smoothed trend and the individual weigh-ins sit behind it
+ * as quiet dots — still visible, still checkable, no longer shouting.
+ *
+ * Dropping the connecting line between raw readings is what keeps this from
+ * adding clutter: the chart gains a line and loses a noisier one.
  */
 export function WeightChart({ actual, projection = [], units, height = 200 }: WeightChartProps) {
   const theme = useTheme();
@@ -59,6 +69,7 @@ export function WeightChart({ actual, projection = [], units, height = 200 }: We
   const fadeProps = useAnimatedProps(() => ({ opacity: reveal.value }));
 
   const sorted = [...actual].sort((a, b) => (a.date < b.date ? -1 : 1));
+  const trend = trendSeries(sorted);
   const all = [...sorted, ...projection];
 
   if (all.length === 0) {
@@ -96,7 +107,7 @@ export function WeightChart({ actual, projection = [], units, height = 200 }: We
   const py = (kg: number) =>
     PAD_TOP + innerH - ((toDisplay(kg) - yMin) / (yMax - yMin)) * innerH;
 
-  const actualPts = sorted.map((p) => `${px(p.date)},${py(p.weightKg)}`).join(' ');
+  const trendPts = trend.map((p) => `${px(p.date)},${py(p.trendKg)}`).join(' ');
   const projCoords = projection.map((p) => ({ x: px(p.date), y: py(p.weightKg) }));
   const projPts = projCoords.map((p) => `${p.x},${p.y}`).join(' ');
   // Soft filled band under the target trajectory (line + area down to the axis).
@@ -164,10 +175,25 @@ export function WeightChart({ actual, projection = [], units, height = 200 }: We
             ) : null}
           </AnimatedG>
 
-          {/* Actual weights (solid) — drawn on from left to right */}
-          {actualPts ? (
+          {/* Individual weigh-ins, kept visible but quiet — no connecting line,
+              because joining them up is what made the noise look like signal. */}
+          <AnimatedG animatedProps={fadeProps}>
+            {sorted.map((p) => (
+              <Circle
+                key={p.date}
+                cx={px(p.date)}
+                cy={py(p.weightKg)}
+                r={2.5}
+                fill={theme.tint}
+                opacity={0.35}
+              />
+            ))}
+          </AnimatedG>
+
+          {/* The trend — the line that actually answers "is this working?" */}
+          {trendPts ? (
             <AnimatedPolyline
-              points={actualPts}
+              points={trendPts}
               fill="none"
               stroke={theme.tint}
               strokeWidth={3}
@@ -177,11 +203,6 @@ export function WeightChart({ actual, projection = [], units, height = 200 }: We
               animatedProps={lineProps}
             />
           ) : null}
-          <AnimatedG animatedProps={fadeProps}>
-            {sorted.map((p) => (
-              <Circle key={p.date} cx={px(p.date)} cy={py(p.weightKg)} r={4} fill={theme.tint} />
-            ))}
-          </AnimatedG>
 
           {/* X axis end labels */}
           <SvgText x={PAD_LEFT} y={height - 6} fontSize={9} fill={theme.textSecondary} textAnchor="start">
@@ -199,17 +220,24 @@ export function WeightChart({ actual, projection = [], units, height = 200 }: We
       )}
 
       <View style={styles.legend}>
-        <Legend color={theme.tint} label={`Actual (${unit})`} />
+        <Legend color={theme.tint} label={`Trend (${unit})`} />
+        <Legend color={theme.tint} label="Weigh-ins" dotted />
         {projection.length ? <Legend color={theme.success} label="Target" /> : null}
       </View>
     </View>
   );
 }
 
-function Legend({ color, label }: { color: string; label: string }) {
+function Legend({ color, label, dotted }: { color: string; label: string; dotted?: boolean }) {
   return (
     <View style={styles.legendItem}>
-      <View style={[styles.legendLine, { backgroundColor: color }]} />
+      <View
+        style={[
+          dotted ? styles.legendDot : styles.legendLine,
+          { backgroundColor: color },
+          dotted && styles.legendDotFaded,
+        ]}
+      />
       <ThemedText type="small" themeColor="textSecondary">
         {label}
       </ThemedText>
@@ -241,5 +269,13 @@ const styles = StyleSheet.create({
     width: 16,
     height: 3,
     borderRadius: 2,
+  },
+  legendDot: {
+    width: 5,
+    height: 5,
+    borderRadius: Radius.full,
+  },
+  legendDotFaded: {
+    opacity: 0.35,
   },
 });

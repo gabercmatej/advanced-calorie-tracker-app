@@ -11,10 +11,25 @@ import type { Macros } from '@/types';
 interface MacroRowProps {
   consumed: Macros;
   goal: Macros;
+  /** Grams of fibre logged today. Omit to hide the fibre bar entirely. */
+  fiber?: number;
+  /** Daily fibre guideline. */
+  fiberGoal?: number;
+  /**
+   * How many of today's entries carried a fibre value. Zero means the day has
+   * no fibre data at all, which is shown as "—" rather than a misleading 0 g.
+   */
+  fiberSources?: number;
 }
 
-/** Three labelled macro progress bars: protein / carbs / fat, filling in sequence. */
-export function MacroRow({ consumed, goal }: MacroRowProps) {
+/**
+ * Labelled macro progress bars, filling in sequence.
+ *
+ * Fibre is appended as a fourth bar when there is anything to say about it. It
+ * is deliberately last and in a quieter colour: it is a guideline, not one of
+ * the three targets the calorie split actually enforces.
+ */
+export function MacroRow({ consumed, goal, fiber, fiberGoal, fiberSources }: MacroRowProps) {
   const theme = useTheme();
 
   const rows = [
@@ -22,6 +37,9 @@ export function MacroRow({ consumed, goal }: MacroRowProps) {
     { key: 'carbs', label: 'Carbs', color: theme.carbs },
     { key: 'fat', label: 'Fat', color: theme.fat },
   ] as const;
+
+  const showFiber = fiber != null && fiberGoal != null;
+  const noFiberData = showFiber && (fiberSources ?? 0) === 0;
 
   return (
     <View style={styles.container}>
@@ -53,6 +71,43 @@ export function MacroRow({ consumed, goal }: MacroRowProps) {
           />
         </View>
       ))}
+
+      {showFiber ? (
+        <View style={styles.item}>
+          <View style={styles.labelRow}>
+            <View style={styles.labelLeft}>
+              <View style={[styles.dot, { backgroundColor: theme.fiber }]} />
+              <ThemedText type="smallBold">Fibre</ThemedText>
+            </View>
+            <View style={styles.valueRow}>
+              {noFiberData ? (
+                <ThemedText type="small" themeColor="textSecondary">
+                  no data
+                </ThemedText>
+              ) : (
+                <>
+                  <CountUp
+                    value={Math.round(fiber)}
+                    delay={560}
+                    type="small"
+                    themeColor="textSecondary"
+                  />
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {' '}
+                    / {fiberGoal} g
+                  </ThemedText>
+                </>
+              )}
+            </View>
+          </View>
+          <ProgressBar
+            value={noFiberData ? 0 : progress(fiber, fiberGoal)}
+            color={theme.fiber}
+            delay={560}
+            height={10}
+          />
+        </View>
+      ) : null}
     </View>
   );
 }

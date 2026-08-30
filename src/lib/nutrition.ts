@@ -1,9 +1,15 @@
+import {
+  currentTrendWeight,
+  trendSlope,
+  weightsInWindow,
+} from '@/lib/weight-trend';
 import type {
   DietType,
   FoodEntry,
   Goals,
   GoalType,
   Macros,
+  MealType,
   UserMetrics,
   WeightEntry,
   WorkoutsPerWeek,
@@ -21,9 +27,19 @@ export function addMacros(a: Macros, b: Macros): Macros {
   };
 }
 
-/** Totals (calories + macros) for a list of entries, accounting for quantity. */
-export function totalsFor(entries: FoodEntry[]): { calories: number; macros: Macros } {
-  return entries.reduce(
+/** What a day (or any set of entries) adds up to. */
+export interface DayTotals {
+  calories: number;
+  macros: Macros;
+  /** Grams of fibre from entries that carry a value. */
+  fiber: number;
+  /** How many entries contributed a fibre value — 0 means "no data", not "0 g". */
+  fiberSources: number;
+}
+
+/** Totals (calories + macros + fibre) for a list of entries, honouring quantity. */
+export function totalsFor(entries: FoodEntry[]): DayTotals {
+  return entries.reduce<DayTotals>(
     (acc, e) => ({
       calories: acc.calories + e.calories * e.quantity,
       macros: addMacros(acc.macros, {
@@ -31,9 +47,24 @@ export function totalsFor(entries: FoodEntry[]): { calories: number; macros: Mac
         carbs: e.macros.carbs * e.quantity,
         fat: e.macros.fat * e.quantity,
       }),
+      fiber: acc.fiber + (e.fiber ?? 0) * e.quantity,
+      fiberSources: acc.fiberSources + (e.fiber == null ? 0 : 1),
     }),
-    { calories: 0, macros: emptyMacros() },
+    { calories: 0, macros: emptyMacros(), fiber: 0, fiberSources: 0 },
   );
+}
+
+/**
+ * Daily fibre guideline in grams, scaled to intake.
+ *
+ * The standard recommendation is about 14 g per 1000 kcal. It is deliberately
+ * a guideline rather than a computed macro target: fibre carries no calorie
+ * split, and on a cut its value is satiety and gut health, not energy. Floored
+ * so that a very low target never suggests an unhelpfully small number.
+ */
+export function fiberTarget(calories: number): number {
+  if (!Number.isFinite(calories) || calories <= 0) return 25;
+  return Math.max(20, Math.round((calories / 1000) * 14));
 }
 
 /** Remaining calories against a goal (never below 0). */
@@ -240,6 +271,41 @@ export const CUT_PROTEIN_G_PER_KG = 2.0;
 /** Trailing window (days) used to estimate adaptive TDEE and average intake. */
 const ADAPT_WINDOW_DAYS = 14;
 
+// --- Data-quality gates ----------------------------------------------------
+//
+// Every one of these exists to stop a thin or noisy fortnight from moving the
+// calorie target. The failure mode being defended against is specific and
+// nasty: under-log for a week, the app concludes maintenance is lower than it
+// is, cuts calories further, which makes adherence worse, which produces more
+// missed days. Being wrong in the conservative direction costs a little time;
+// being wrong in the aggressive direction costs muscle.
+
+/** Days in the window that must carry logged food before intake is trusted. */
+const MIN_INTAKE_DAYS = 10;
+/** …and as a share of the window, so gaps can't hide behind a raw count. */
+const MIN_COVERAGE = 0.7;
+/** Weigh-ins needed before a regression slope means anything. */
+const MIN_WEIGH_INS = 4;
+/** …spread over at least this many days. */
+const MIN_WEIGH_SPAN_DAYS = 10;
+/**
+ * How far observed maintenance may sit from the formula. The formula is a
+ * decent prior; a fortnight of home scale readings is not good enough evidence
+ * to overturn it by more than a quarter.
+ */
+const OBSERVED_BAND = 0.25;
+/** Ceiling on how much the observation is allowed to outweigh the formula. */
+const MAX_BLEND = 0.8;
+/** Most the daily target may move per calendar day once a plan is established. */
+const MAX_TARGET_STEP_KCAL = 75;
+
+/** The previously applied target, used to rate-limit day-to-day movement. */
+export interface PlanAnchor {
+  calories: number;
+  /** Date key the anchor was set on. */
+  date: string;
+}
+
 export interface AdaptivePlan {
   calories: number;
   macros: Macros;
@@ -252,6 +318,16 @@ export interface AdaptivePlan {
   targetWeeklyLossKg: number;
   /** How many days of intake data fed the estimate (confidence signal). */
   intakeDays: number;
+  /** Share of the window that carried a food log, 0..1. */
+  coverage: number;
+  /** How much weight the observation was given over the formula, 0..1. */
+  blend: number;
+  /** Smoothed bodyweight the plan was built from (not the raw last reading). */
+  trendWeightKg: number;
+  /** Measured rate of change from the regression fit, or null when unknown. */
+  observedWeeklyChangeKg: number | null;
+  /** Set when the target was held back by the per-day movement cap. */
+  rateLimited: boolean;
 }
 
 /** Macro split that pins protein to a muscle-sparing floor, then splits the rest. */
@@ -270,70 +346,146 @@ function macrosWithProteinFloor(calories: number, proteinG: number, diet: DietTy
   };
 }
 
+/** Ramp from 0 at `lo` to 1 at `hi`, flat outside. Used to score data quality. */
+function ramp(value: number, lo: number, hi: number): number {
+  if (hi <= lo) return value >= hi ? 1 : 0;
+  return Math.max(0, Math.min(1, (value - lo) / (hi - lo)));
+}
+
+/** Calories eaten per logged day in the window, and how many days that was. */
+function intakeStats(
+  entries: FoodEntry[],
+  windowStart: string,
+  windowEnd: string,
+): { avgIntake: number; intakeDays: number } {
+  const dayTotals = new Map<string, number>();
+  for (const e of entries) {
+    // `windowEnd` is yesterday, never today: a day still in progress would drag
+    // the average down by however much of it has not been eaten yet, which made
+    // the target drift lower every morning and recover every evening.
+    if (e.date >= windowStart && e.date <= windowEnd) {
+      dayTotals.set(e.date, (dayTotals.get(e.date) ?? 0) + e.calories * e.quantity);
+    }
+  }
+  const intakeDays = dayTotals.size;
+  if (intakeDays === 0) return { avgIntake: 0, intakeDays: 0 };
+  // The mean over *logged* days, which assumes a skipped day looked like a
+  // logged one. That is not perfect — skipped days skew heavy — but it is the
+  // only defensible assumption available, and it is far safer than counting an
+  // unlogged day as zero, which would invent a deficit that never happened.
+  // The coverage gate below is what stops that assumption being stretched.
+  const total = [...dayTotals.values()].reduce((a, b) => a + b, 0);
+  return { avgIntake: total / intakeDays, intakeDays };
+}
+
 /**
  * Compute an adaptive daily calorie + macro target for someone losing weight.
  * Returns null for non-cutters (maintain/gain keep their onboarding goals).
+ *
+ * The shape of the estimate:
+ *
+ *  1. Work from *smoothed* bodyweight, not the last reading on the scale.
+ *  2. Average intake over the last fourteen complete days — today excluded.
+ *  3. Fit the rate of change with Theil–Sen — the median of the pairwise
+ *     slopes — across every weigh-in in that window. Least squares was tried
+ *     and rejected: one 1.5 kg water spike on the final morning flips an OLS
+ *     slope's sign, and a sign flip here *cuts calories* for a salty dinner.
+ *  4. Observed maintenance = average intake + the energy the weight change
+ *     implies. Clamp it to a band around the Mifflin-St Jeor formula.
+ *  5. Blend observation and formula by how good the data actually is, so a
+ *     thin or noisy fortnight barely moves the number and a clean one moves it
+ *     most of the way.
+ *  6. Size the deficit from a %-of-bodyweight loss rate, capped for muscle.
+ *  7. Rate-limit the result so the target can only walk, never jump.
  */
 export function computeAdaptivePlan(
   metrics: UserMetrics | undefined,
   entries: FoodEntry[],
   weights: WeightEntry[],
+  anchor?: PlanAnchor | null,
+  todayKey: string = toDateKey(),
 ): AdaptivePlan | null {
   if (!metrics || metrics.goalType !== 'lose') return null;
 
-  const latest = latestWeight(weights);
-  const currentWeight = latest?.weightKg ?? metrics.weightKg;
-  const formulaTdee = estimateTdee({ ...metrics, weightKg: currentWeight });
+  const today = todayKey;
+  // Smoothed, not raw: a single salty dinner should not change the protein
+  // target or the TDEE the whole plan is built on.
+  const trendWeightKg = currentTrendWeight(weights) ?? metrics.weightKg;
+  const formulaTdee = estimateTdee({ ...metrics, weightKg: trendWeightKg });
 
-  // --- Average intake over the trailing window (days that were actually logged) ---
-  const today = toDateKey();
+  // --- Intake over the last complete days --------------------------------
+  const windowEnd = addDays(today, -1);
   const windowStart = addDays(today, -ADAPT_WINDOW_DAYS);
-  const dayTotals = new Map<string, number>();
-  for (const e of entries) {
-    if (e.date > windowStart && e.date <= today) {
-      dayTotals.set(e.date, (dayTotals.get(e.date) ?? 0) + e.calories * e.quantity);
-    }
-  }
-  const intakeDays = dayTotals.size;
-  const avgIntake =
-    intakeDays > 0 ? [...dayTotals.values()].reduce((a, b) => a + b, 0) / intakeDays : 0;
+  const { avgIntake, intakeDays } = intakeStats(entries, windowStart, windowEnd);
+  const coverage = intakeDays / ADAPT_WINDOW_DAYS;
 
-  // --- Observed (adaptive) TDEE from intake vs. real weight change ---
-  const windowWeights = weights
-    .filter((w) => w.date >= windowStart && w.date <= today)
-    .sort((a, b) => (a.date < b.date ? -1 : 1));
+  // --- Rate of weight change, fitted across every reading in the window ---
+  const windowWeights = weightsInWindow(weights, windowStart, today);
+  const fit = trendSlope(windowWeights);
+  const observedWeeklyChangeKg = fit ? fit.kgPerDay * 7 : null;
+
+  // --- Observed maintenance, and how much to believe it -------------------
   let observedTdee: number | null = null;
-  if (intakeDays >= 10 && windowWeights.length >= 2) {
-    const first = windowWeights[0];
-    const last = windowWeights[windowWeights.length - 1];
-    const span = daysBetween(first.date, last.date);
-    if (span >= 7) {
-      const changeKg = last.weightKg - first.weightKg; // negative while losing
-      const raw = avgIntake - (changeKg / span) * KCAL_PER_KG;
-      // Clamp around the formula so scale/water noise can't produce a wild target.
-      observedTdee = Math.round(Math.max(formulaTdee * 0.6, Math.min(formulaTdee * 1.4, raw)));
-    }
-  }
-  const tdee = observedTdee ?? formulaTdee;
+  let blend = 0;
 
-  // --- Target loss rate: constant %-bodyweight, capped to the muscle-sparing zone ---
-  let weeklyLossKg = currentWeight * SAFE_WEEKLY_LOSS_PCT;
+  const enoughIntake = intakeDays >= MIN_INTAKE_DAYS && coverage >= MIN_COVERAGE;
+  const enoughWeights =
+    fit !== null && fit.points >= MIN_WEIGH_INS && fit.spanDays >= MIN_WEIGH_SPAN_DAYS;
+
+  if (enoughIntake && enoughWeights && fit) {
+    // Losing weight means the body spent more than came in; the gap is the
+    // energy the tissue change accounts for.
+    const raw = avgIntake - fit.kgPerDay * KCAL_PER_KG;
+    observedTdee = Math.round(
+      Math.max(formulaTdee * (1 - OBSERVED_BAND), Math.min(formulaTdee * (1 + OBSERVED_BAND), raw)),
+    );
+
+    // Confidence rises with log coverage, number of weigh-ins, and how long
+    // they span. All three must be good for the observation to dominate.
+    const quality =
+      ramp(coverage, MIN_COVERAGE, 1) *
+      ramp(fit.points, MIN_WEIGH_INS, ADAPT_WINDOW_DAYS) *
+      ramp(fit.spanDays, MIN_WEIGH_SPAN_DAYS, ADAPT_WINDOW_DAYS);
+    blend = MAX_BLEND * quality;
+  }
+
+  const tdee = observedTdee == null ? formulaTdee : formulaTdee + (observedTdee - formulaTdee) * blend;
+
+  // --- Target loss rate: constant %-bodyweight, capped to the safe zone ----
+  let weeklyLossKg = trendWeightKg * SAFE_WEEKLY_LOSS_PCT;
   if (metrics.targetWeightKg != null && metrics.targetDate) {
     const daysLeft = daysBetween(today, metrics.targetDate);
-    const toLose = currentWeight - metrics.targetWeightKg;
+    const toLose = trendWeightKg - metrics.targetWeightKg;
     if (toLose <= 0) {
       weeklyLossKg = 0; // already at/under goal — hold at maintenance
     } else if (daysLeft > 0) {
       weeklyLossKg = (toLose / daysLeft) * 7; // pace to hit the deadline...
     }
   }
-  weeklyLossKg = Math.max(0, Math.min(weeklyLossKg, currentWeight * MAX_WEEKLY_LOSS_PCT)); // ...but never unsafe
+  weeklyLossKg = Math.max(0, Math.min(weeklyLossKg, trendWeightKg * MAX_WEEKLY_LOSS_PCT)); // ...but never unsafe
 
   const dailyDeficit = (weeklyLossKg * KCAL_PER_KG) / 7;
   const floor = metrics.sex === 'male' ? 1500 : 1200;
-  const calories = Math.max(floor, Math.round((tdee - dailyDeficit) / 10) * 10);
+  let calories = Math.max(floor, Math.round((tdee - dailyDeficit) / 10) * 10);
 
-  const proteinG = Math.round(currentWeight * CUT_PROTEIN_G_PER_KG);
+  // --- Rate limit ---------------------------------------------------------
+  // Even with every gate above, the target should walk rather than jump: a
+  // change of more than a small step overnight is nearly always noise, and a
+  // target that lurches is one you stop trusting. The cap is per calendar day
+  // since the anchor, so a long gap between opens still catches up smoothly.
+  let rateLimited = false;
+  if (anchor && anchor.calories > 0) {
+    const daysSince = Math.max(1, daysBetween(anchor.date, today));
+    const maxMove = MAX_TARGET_STEP_KCAL * daysSince;
+    const delta = calories - anchor.calories;
+    if (Math.abs(delta) > maxMove) {
+      calories = Math.round((anchor.calories + Math.sign(delta) * maxMove) / 10) * 10;
+      rateLimited = true;
+    }
+    calories = Math.max(floor, calories);
+  }
+
+  const proteinG = Math.round(trendWeightKg * CUT_PROTEIN_G_PER_KG);
   return {
     calories,
     macros: macrosWithProteinFloor(calories, proteinG, metrics.diet),
@@ -342,6 +494,11 @@ export function computeAdaptivePlan(
     basis: observedTdee != null ? 'adaptive' : 'formula',
     targetWeeklyLossKg: weeklyLossKg,
     intakeDays,
+    coverage,
+    blend,
+    trendWeightKg,
+    observedWeeklyChangeKg,
+    rateLimited,
   };
 }
 
@@ -415,6 +572,15 @@ export function weekOf(key: string = toDateKey()): string[] {
   const d = fromDateKey(key);
   const sunday = addDays(key, -d.getDay());
   return Array.from({ length: 7 }, (_, i) => addDays(sunday, i));
+}
+
+/** The meal slot the current time of day most likely belongs to. */
+export function currentMeal(now: Date = new Date()): MealType {
+  const h = now.getHours();
+  if (h < 11) return 'breakfast';
+  if (h < 15) return 'lunch';
+  if (h < 21) return 'dinner';
+  return 'snack';
 }
 
 /** Friendly label for a date key relative to today (Today / Yesterday / date). */

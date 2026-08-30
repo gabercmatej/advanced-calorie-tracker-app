@@ -25,12 +25,48 @@ export interface FoodEntry {
   quantity: number;
   /** Epoch millis of creation, used for ordering. */
   createdAt: number;
+  /**
+   * Epoch millis of the last edit. Absent on entries written before sync
+   * existed — merge falls back to `createdAt` for those. This is what decides
+   * which copy wins when the same entry exists locally and in the cloud.
+   */
+  updatedAt?: number;
   /** True when the values came from the AI estimator rather than a database. */
   aiEstimated?: boolean;
   /** Local URI of the photo the meal was logged from (local-only mode / preview). */
   photoUri?: string;
-  /** Object path in the Supabase `meal-photos` bucket, when synced to the cloud. */
+  /** Every photo the meal was logged from. `photoUri` is always the first of these. */
+  photoUris?: string[];
+  /**
+   * Legacy: object path of a photo uploaded by an older build. Photos are no
+   * longer synced, so nothing writes this any more — it is kept only so old
+   * stored entries still parse.
+   */
   photoPath?: string;
+  /** Per-component breakdown, when the estimate produced one. Display only. */
+  items?: EntryItem[];
+  /**
+   * Dietary fibre in grams, when known. Deliberately NOT part of `Macros`:
+   * fibre carries no calorie-split target, so it sums alongside the macros
+   * rather than participating in their arithmetic. Absent means "not known",
+   * which the UI distinguishes from a known zero.
+   */
+  fiber?: number;
+}
+
+/** Where a single component of a logged meal got its numbers. */
+export type ItemSource = 'label' | 'estimate';
+
+/**
+ * One component of a logged meal. `label` items were read off a scanned
+ * barcode and are exact; `estimate` items were inferred from a photo or the
+ * description. Stored on the entry purely so the breakdown can be shown again.
+ */
+export interface EntryItem {
+  name: string;
+  calories: number;
+  macros: Macros;
+  source: ItemSource;
 }
 
 /** A single body-weight measurement, stored in kilograms. */
@@ -38,6 +74,8 @@ export interface WeightEntry {
   /** ISO date string (YYYY-MM-DD). One measurement per day (latest wins). */
   date: string;
   weightKg: number;
+  /** Epoch millis of the last write. Absent on pre-sync entries. */
+  updatedAt?: number;
 }
 
 /** The user's daily nutrition targets. */
@@ -100,6 +138,23 @@ export interface Profile {
   units: UnitSystem;
   /** Light / dark appearance. */
   theme: ThemePreference;
+  /** Epoch millis of the last profile write, used to resolve sync conflicts. */
+  updatedAt?: number;
+}
+
+/**
+ * A food the user pinned for one-tap logging. Values are always for a single
+ * serving; the amount is chosen again each time it is logged.
+ */
+export interface SavedFood {
+  id: string;
+  name: string;
+  calories: number;
+  macros: Macros;
+  fiber?: number;
+  /** Meal slot to preselect when logging it. */
+  usualMeal?: MealType;
+  createdAt: number;
 }
 
 /** A signed-in account (local mock persistence for now). */
@@ -107,4 +162,60 @@ export interface Session {
   name: string;
   email: string;
   provider: 'google' | 'email';
+}
+
+// ---------------------------------------------------------------------------
+// Food tab — recipes and chat
+// ---------------------------------------------------------------------------
+
+/** Which shelf an ingredient lives on, used to group the pantry picker. */
+export type IngredientGroup = 'protein' | 'carbs' | 'veg' | 'dairy' | 'pantry';
+
+export const INGREDIENT_GROUPS: IngredientGroup[] = [
+  'protein',
+  'carbs',
+  'veg',
+  'dairy',
+  'pantry',
+];
+
+/** A pantry ingredient the user can toggle on/off. */
+export interface Ingredient {
+  id: string;
+  label: string;
+  group: IngredientGroup;
+}
+
+/**
+ * A meal idea. Bundled recipes live in `src/lib/recipe-data.ts`; model-generated
+ * ones arrive in exactly this shape so the UI cannot tell them apart.
+ */
+export interface Recipe {
+  id: string;
+  name: string;
+  /** Meal slots this fits — a recipe can serve more than one. */
+  meals: MealType[];
+  calories: number;
+  macros: Macros;
+  /** Dietary fibre in grams for one serving, when known. */
+  fiber?: number;
+  /** Hands-on time in minutes. */
+  minutes: number;
+  /** Ingredient ids, matched against the user's pantry. */
+  ingredients: string[];
+  /** Seasonings and staples that don't participate in pantry filtering. */
+  extras?: string[];
+  steps: string[];
+  /** Diets this is compatible with. */
+  diets: DietType[];
+  /** True when the model produced it rather than the bundled library. */
+  generated?: boolean;
+}
+
+/** One turn in the Ask transcript. */
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  createdAt: number;
 }

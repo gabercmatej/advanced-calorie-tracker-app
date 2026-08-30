@@ -37,6 +37,9 @@ export const Colors = {
     protein: '#E8446B',
     carbs: '#3B82F6',
     fat: '#EA9013',
+    // Fibre sits alongside the macros but is not one of them — a muted green
+    // keeps it legible as a secondary, guideline-only bar.
+    fiber: '#0E9F6E',
     // Accents
     streak: '#FB8C3C',
     // Status
@@ -61,6 +64,7 @@ export const Colors = {
     protein: '#FF6B8B',
     carbs: '#5B9BFF',
     fat: '#FFB84D',
+    fiber: '#4ADE80',
     // Accents
     streak: '#FCA34F',
     // Status

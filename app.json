@@ -8,6 +8,7 @@
     "scheme": "calai",
     "userInterfaceStyle": "automatic",
     "ios": {
+      "bundleIdentifier": "com.gabercmatej.calai",
       "icon": "./assets/expo.icon"
     },
     "android": {
@@ -47,7 +48,9 @@
           "barcodeScannerEnabled": true
         }
       ],
-      "expo-notifications"
+      "expo-notifications",
+      "expo-sharing",
+      "./plugins/with-local-notifications-only"
     ],
     "experiments": {
       "typedRoutes": true,

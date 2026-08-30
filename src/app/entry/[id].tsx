@@ -1,5 +1,6 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,13 +15,16 @@ import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { haptics } from '@/lib/haptics';
 import { useDiary } from '@/context/DiaryContext';
 import { useEntryPhoto } from '@/hooks/use-entry-photo';
+import { useTheme } from '@/hooks/use-theme';
+import { useDismiss } from '@/hooks/use-dismiss';
 import { MEAL_TYPES, type MealType } from '@/types';
 
 const MEAL_OPTIONS = MEAL_TYPES.map((m) => ({ value: m, label: m[0].toUpperCase() + m.slice(1) }));
 
 export default function EditEntryScreen() {
   const insets = useSafeAreaInsets();
-  const router = useRouter();
+  const theme = useTheme();
+  const dismiss = useDismiss('/');
   const { id } = useLocalSearchParams<{ id: string }>();
   const { entries, updateEntry, removeEntry } = useDiary();
 
@@ -33,13 +37,15 @@ export default function EditEntryScreen() {
   const [protein, setProtein] = useState(String(Math.round(entry?.macros.protein ?? 0)));
   const [carbs, setCarbs] = useState(String(Math.round(entry?.macros.carbs ?? 0)));
   const [fat, setFat] = useState(String(Math.round(entry?.macros.fat ?? 0)));
+  // Blank means "not known", which stays distinct from a known 0 g.
+  const [fiber, setFiber] = useState(entry?.fiber == null ? '' : String(Math.round(entry.fiber)));
   const [quantity, setQuantity] = useState(String(entry?.quantity ?? 1));
 
   if (!entry) {
     return (
       <ThemedView style={[styles.flex, styles.centerContent]}>
         <ThemedText themeColor="textSecondary">This entry no longer exists.</ThemedText>
-        <Button title="Close" variant="secondary" onPress={() => router.back()} />
+        <Button title="Close" variant="secondary" onPress={() => dismiss()} />
       </ThemedView>
     );
   }
@@ -54,14 +60,15 @@ export default function EditEntryScreen() {
         carbs: Math.max(0, Number(carbs) || 0),
         fat: Math.max(0, Number(fat) || 0),
       },
+      fiber: fiber.trim() === '' ? undefined : Math.max(0, Number(fiber) || 0),
       quantity: Math.max(0.25, Number(quantity) || 1),
     });
-    router.back();
+    dismiss();
   }
 
   function onDelete() {
     removeEntry(entry!.id);
-    router.back();
+    dismiss();
   }
 
   return (
@@ -76,7 +83,7 @@ export default function EditEntryScreen() {
             <ThemedText type="title" style={styles.title}>
               Edit food
             </ThemedText>
-            <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="Close">
+            <Pressable onPress={() => dismiss()} hitSlop={10} accessibilityLabel="Close">
               <ThemedText type="smallBold" themeColor="textSecondary">
                 Cancel
               </ThemedText>
@@ -88,6 +95,32 @@ export default function EditEntryScreen() {
           ) : null}
 
           <Field label="Name" value={name} onChangeText={setName} />
+
+          {/* Provenance of the original estimate — read-only, since editing the
+              totals above doesn't retroactively re-split the components. */}
+          {entry.items?.length ? (
+            <View style={styles.field}>
+              <ThemedText type="smallBold">How this was worked out</ThemedText>
+              <View style={[styles.breakdown, { borderColor: theme.border }]}>
+                {entry.items.map((item, i) => (
+                  <View key={`${item.name}-${i}`} style={styles.breakdownRow}>
+                    <Ionicons
+                      name={item.source === 'label' ? 'pricetag' : 'sparkles-outline'}
+                      size={12}
+                      color={item.source === 'label' ? theme.success : theme.textSecondary}
+                    />
+                    <ThemedText type="small" style={styles.breakdownName} numberOfLines={1}>
+                      {item.name}
+                    </ThemedText>
+                    <ThemedText type="small" themeColor="textSecondary">
+                      {item.source === 'label' ? '' : '~'}
+                      {item.calories} kcal
+                    </ThemedText>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
 
           <View style={styles.field}>
             <ThemedText type="smallBold">Meal</ThemedText>
@@ -114,15 +147,25 @@ export default function EditEntryScreen() {
             </View>
           </View>
 
-          <View style={styles.grid}>
-            <View style={styles.gridItem}>
+          <View style={styles.macroGrid}>
+            <View style={styles.macroItem}>
               <Field label="Protein" value={protein} onChangeText={setProtein} keyboardType="number-pad" suffix="g" />
             </View>
-            <View style={styles.gridItem}>
+            <View style={styles.macroItem}>
               <Field label="Carbs" value={carbs} onChangeText={setCarbs} keyboardType="number-pad" suffix="g" />
             </View>
-            <View style={styles.gridItem}>
+            <View style={styles.macroItem}>
               <Field label="Fat" value={fat} onChangeText={setFat} keyboardType="number-pad" suffix="g" />
+            </View>
+            <View style={styles.macroItem}>
+              <Field
+                label="Fibre"
+                value={fiber}
+                onChangeText={setFiber}
+                keyboardType="number-pad"
+                suffix="g"
+                placeholder="—"
+              />
             </View>
           </View>
 
@@ -187,8 +230,33 @@ const styles = StyleSheet.create({
   gridItem: {
     flex: 1,
   },
+  // Four across where there's room, two-by-two on a narrow phone.
+  macroGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.two,
+  },
+  macroItem: {
+    flexGrow: 1,
+    flexBasis: 78,
+  },
   delete: {
     alignItems: 'center',
     paddingVertical: Spacing.two,
+  },
+  breakdown: {
+    gap: Spacing.two,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    borderRadius: Radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  breakdownRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  breakdownName: {
+    flex: 1,
   },
 });

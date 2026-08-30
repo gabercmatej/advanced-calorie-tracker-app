@@ -1,0 +1,16 @@
+{
+  // Tests are typechecked separately from the app.
+  //
+  // They need Node's globals and `.ts` import specifiers (Node's native type
+  // stripping resolves real files, not bundler-style extensionless paths).
+  // Neither belongs in the app's own config: pulling @types/node into a React
+  // Native program shadows RN's own timer and global declarations.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  },
+  "exclude": [],
+  "include": ["src/**/__tests__/**/*.ts"]
+}

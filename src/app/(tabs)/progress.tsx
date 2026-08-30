@@ -19,7 +19,6 @@ import { useTheme } from '@/hooks/use-theme';
 import { haptics } from '@/lib/haptics';
 import {
   addDays,
-  daysBetween,
   fromDateKey,
   kgToLb,
   latestWeight,
@@ -27,6 +26,8 @@ import {
   toDateKey,
   weightProjection,
 } from '@/lib/nutrition';
+import { reviewCut } from '@/lib/diet-break';
+import { currentTrendWeight, trendSlope } from '@/lib/weight-trend';
 import type { UnitSystem, WeightEntry } from '@/types';
 
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -37,13 +38,16 @@ export default function ProgressScreen() {
   const theme = useTheme();
   const gradients = useGradients();
   const router = useRouter();
-  const { profile, weights, streak, recommendation, loggedDates } = useDiary();
+  const { profile, entries, weights, streak, recommendation, loggedDates } = useDiary();
   const units = profile.units;
   const metrics = profile.metrics;
 
   const latest = latestWeight(weights);
   const sorted = [...weights].sort((a, b) => (a.date < b.date ? -1 : 1));
   const start = sorted[0];
+  // Progress and projections read the smoothed weight, so a single heavy
+  // morning cannot make the goal bar jump backwards.
+  const trendKg = currentTrendWeight(weights);
 
   const projection =
     metrics?.targetWeightKg != null && metrics.targetDate && start
@@ -51,10 +55,10 @@ export default function ProgressScreen() {
       : [];
 
   let goalPct: number | null = null;
-  if (metrics?.targetWeightKg != null && start && latest) {
+  if (metrics?.targetWeightKg != null && start && trendKg != null) {
     const span = start.weightKg - metrics.targetWeightKg;
     if (Math.abs(span) > 0.01) {
-      goalPct = Math.max(0, Math.min(1, (start.weightKg - latest.weightKg) / span));
+      goalPct = Math.max(0, Math.min(1, (start.weightKg - trendKg) / span));
     }
   }
 
@@ -63,14 +67,21 @@ export default function ProgressScreen() {
 
   // --- Trend stats over the trailing window ---
   const today = toDateKey();
+  // Advisory only — this never alters the calorie target (see lib/diet-break.ts).
+  const review = reviewCut(entries, weights, {
+    today,
+    targetCalories: profile.goals.calories,
+    trendWeightKg: trendKg ?? metrics?.weightKg ?? 0,
+    isCutting: metrics?.goalType === 'lose',
+  });
   const windowStart = addDays(today, -TREND_WINDOW_DAYS);
   const weeklyAvgKg = weeklyRate(sorted, windowStart);
   const daysLogged = [...loggedDates].filter((d) => d > windowStart && d <= today).length;
 
   // Projected finish, extrapolated from the observed velocity.
   let finishDate: string | null = null;
-  if (latest && metrics?.targetWeightKg != null && weeklyAvgKg != null) {
-    const toGo = metrics.targetWeightKg - latest.weightKg;
+  if (trendKg != null && metrics?.targetWeightKg != null && weeklyAvgKg != null) {
+    const toGo = metrics.targetWeightKg - trendKg;
     // Only project when actually moving toward the goal.
     if (Math.abs(toGo) > 0.05 && Math.sign(toGo) === Math.sign(weeklyAvgKg)) {
       const days = Math.round((toGo / weeklyAvgKg) * 7);
@@ -167,6 +178,30 @@ export default function ProgressScreen() {
         </Appear>
       )}
 
+      {/* Long-cut check-in. Deliberately a suggestion: nothing here changes the
+          plan, because two mechanisms reacting to the same scale noise is how a
+          fortnight of water retention turns into a calorie cut. */}
+      {review.advice && (
+        <Appear delay={220}>
+          <GradientCard
+            contentStyle={[
+              styles.factCard,
+              {
+                borderLeftColor: review.advice.kind === 'fast-loss' ? theme.fat : theme.tint,
+                borderLeftWidth: 3,
+              },
+            ]}>
+            <ThemedText type="small" themeColor="textSecondary" style={styles.tileLabel}>
+              Check-in
+            </ThemedText>
+            <ThemedText type="smallBold">{review.advice.title}</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              {review.advice.body}
+            </ThemedText>
+          </GradientCard>
+        </Appear>
+      )}
+
       {/* Projected finish / total loss / streak */}
       {finishDate && (
         <Appear delay={240}>
@@ -230,18 +265,20 @@ export default function ProgressScreen() {
 }
 
 /**
- * Average weekly weight change (kg/week) over the trailing window; falls back
- * to the whole history when the window holds fewer than two weigh-ins.
+ * Weekly weight change (kg/week) over the trailing window, falling back to the
+ * whole history when the window holds fewer than two weigh-ins.
+ *
+ * Uses the same robust fit as the calorie engine rather than subtracting the
+ * first reading from the last. Endpoints put the entire number at the mercy of
+ * two mornings — one of which is today's, water and all — which is how a good
+ * week ends up displayed as a gain.
  */
 function weeklyRate(sorted: WeightEntry[], windowStart: string): number | null {
   const recent = sorted.filter((w) => w.date > windowStart);
   const pts = recent.length >= 2 ? recent : sorted;
-  if (pts.length < 2) return null;
-  const first = pts[0];
-  const last = pts[pts.length - 1];
-  const span = daysBetween(first.date, last.date);
-  if (span < 1) return null;
-  return ((last.weightKg - first.weightKg) / span) * 7;
+  const fit = trendSlope(pts);
+  if (!fit || fit.spanDays < 1) return null;
+  return fit.kgPerDay * 7;
 }
 
 function longDate(key: string): string {

@@ -46,3 +46,10 @@ example
 # web demo deploy staging
 .web-demo-deploy/
 .web-demo-project
+
+# supabase CLI link state (project ref, pooler config) — local, not shared
+supabase/.temp/
+
+# local agent/tool scratch — not part of the project
+.playwright-mcp/
+skill-observations/

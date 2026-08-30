@@ -27,6 +27,7 @@ import { useTheme } from '@/hooks/use-theme';
 import {
   addDays,
   ageFromBirthDate,
+  computeAdaptivePlan,
   computeGoals,
   DIET_LABEL,
   fromDateKey,
@@ -38,6 +39,7 @@ import {
   toDateKey,
   WORKOUT_LABEL,
 } from '@/lib/nutrition';
+import { StorageKeys, storage } from '@/lib/storage';
 import type { DietType, GoalType, Sex, UserMetrics, WorkoutsPerWeek } from '@/types';
 
 type StepId =
@@ -52,7 +54,37 @@ type StepId =
   | 'review'
   | 'calculating'
   | 'plan'
-  | 'account';
+  | 'account'
+  | 'verify';
+
+/**
+ * Everything the wizard needs to rebuild itself, saved on every change.
+ *
+ * Onboarding runs before an account exists, and the confirmation step then
+ * sends the user out to their inbox — which on iOS is a realistic chance of the
+ * app being evicted. Persisting the answers means coming back resumes rather
+ * than restarting. Credentials are deliberately absent: a password has no
+ * business in AsyncStorage.
+ */
+interface OnboardingDraft {
+  stepId: StepId;
+  sex: Sex | null;
+  workouts: WorkoutsPerWeek | null;
+  heightUnit: 'cm' | 'ft';
+  cmStr: string;
+  ftStr: string;
+  inStr: string;
+  weightUnit: 'kg' | 'lbs';
+  weightVal: number;
+  birthDate: string;
+  goalType: GoalType | null;
+  targetVal: number;
+  timeframe: string;
+  customDate: string;
+  diet: DietType | null;
+  name: string;
+  email: string;
+}
 
 const TIMEFRAMES = [
   { label: '1 mo', days: 30 },
@@ -64,8 +96,19 @@ const TIMEFRAMES = [
 export default function OnboardingScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { completeOnboarding, setUnits } = useDiary();
-  const { signInWithGoogle, signUpWithEmail, usesSupabase } = useAuth();
+  const { completeOnboarding, profile, setName: saveName, setUnits } = useDiary();
+  // Captured once, via a lazy initial state: `completeOnboarding` flips this
+  // partway through the wizard, and re-reading it live would make the draft
+  // effect clear the very input it is meant to restore.
+  const [onboardedAlready] = useState(profile.onboarded);
+  const {
+    signInWithGoogle,
+    signUpWithEmail,
+    signInWithEmail,
+    resendVerification,
+    usesSupabase,
+    session,
+  } = useAuth();
 
   // Answers.
   const [sex, setSex] = useState<Sex | null>(null);
@@ -96,13 +139,17 @@ export default function OnboardingScreen() {
       : addDays(toDateKey(), Number(timeframe))
     : undefined;
 
-  // Ordered flow (target step only when relevant).
+  // Ordered flow. The target step appears only when relevant, and the account
+  // steps only when there is no session yet — someone who signed in first and
+  // is being asked to onboard has nothing to create.
+  const alreadySignedIn = session !== null;
   const flow = useMemo<StepId[]>(() => {
     const base: StepId[] = ['sex', 'workouts', 'height', 'weight', 'birth', 'goal'];
     if (wantsTarget) base.push('target');
-    base.push('diet', 'review', 'calculating', 'plan', 'account');
+    base.push('diet', 'review', 'calculating', 'plan');
+    if (!alreadySignedIn) base.push('account', 'verify');
     return base;
-  }, [wantsTarget]);
+  }, [wantsTarget, alreadySignedIn]);
 
   const [stepId, setStepId] = useState<StepId>('sex');
   const returnToReview = useRef(false);
@@ -129,7 +176,24 @@ export default function OnboardingScreen() {
     };
   }, [sex, workouts, goalType, diet, heightCm, weightKg, birthDate, wantsTarget, targetKg, targetDate]);
 
-  const goals = useMemo(() => (metrics ? computeGoals(metrics) : null), [metrics]);
+  /**
+   * The plan the app will actually run.
+   *
+   * `computeGoals` sets protein as a share of calories (40% on a cut), while
+   * the adaptive engine sets it from bodyweight at 2 g/kg. For a cutter those
+   * disagree badly — 255 g against 166 g at 83 kg — and `DiaryContext` applies
+   * the adaptive plan within a second of onboarding finishing. So the wizard
+   * used to display, and briefly store, a target that was replaced before the
+   * user reached the home screen. Computing the adaptive plan here (with no
+   * history yet, so it is the formula case) means the number on the plan card,
+   * the number written to storage, and the number on the home screen are the
+   * same number from the first frame.
+   */
+  const goals = useMemo(() => {
+    if (!metrics) return null;
+    const adaptive = computeAdaptivePlan(metrics, [], [], null);
+    return adaptive ? { calories: adaptive.calories, macros: adaptive.macros } : computeGoals(metrics);
+  }, [metrics]);
 
   // Toggle weight unit → convert current values so the number stays sensible.
   function toggleWeightUnit(u: 'kg' | 'lbs') {
@@ -160,6 +224,13 @@ export default function OnboardingScreen() {
       setStepId('review');
       return;
     }
+    // For an already-signed-in user the plan step is the end of the wizard;
+    // saving is what lets the router move them into the app.
+    if (stepId === 'plan' && alreadySignedIn) {
+      savePlan();
+      storage.remove(StorageKeys.onboardingDraft);
+      return;
+    }
     const idx = flow.indexOf(stepId);
     setStepId(flow[Math.min(idx + 1, flow.length - 1)]);
   }
@@ -174,6 +245,120 @@ export default function OnboardingScreen() {
     setStepId(id);
   }
 
+  // --- Draft: resume where the wizard left off ------------------------------
+  const [draftLoaded, setDraftLoaded] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    // A draft is stale once the plan is saved *and* an account exists —
+    // clearing it here, rather than at the end of the wizard, means it cannot
+    // outlive its purpose even if the router unmounts this screen mid-step.
+    //
+    // Onboarded but signed out is deliberately not stale: that is the user who
+    // finished their plan, left to open the confirmation mail, and came back.
+    // The draft is what returns them to the account step instead of to the
+    // first question of a wizard they have already completed.
+    if (onboardedAlready && alreadySignedIn) {
+      storage.remove(StorageKeys.onboardingDraft).then(() => {
+        if (!cancelled) setDraftLoaded(true);
+      });
+      return;
+    }
+    storage.get<OnboardingDraft>(StorageKeys.onboardingDraft).then((d) => {
+      if (cancelled || !d) {
+        if (!cancelled) setDraftLoaded(true);
+        return;
+      }
+      setSex(d.sex);
+      setWorkouts(d.workouts);
+      setHeightUnit(d.heightUnit);
+      setCmStr(d.cmStr);
+      setFtStr(d.ftStr);
+      setInStr(d.inStr);
+      setWeightUnit(d.weightUnit);
+      setWeightVal(d.weightVal);
+      setBirthDate(d.birthDate);
+      setGoalType(d.goalType);
+      setTargetVal(d.targetVal);
+      setTimeframe(d.timeframe);
+      setCustomDate(d.customDate);
+      setDiet(d.diet);
+      setName(d.name);
+      setEmail(d.email);
+      // Never resume onto 'calculating' (it auto-advances) or 'verify' (which
+      // would poll for a sign-up this session never made).
+      setStepId(d.stepId === 'calculating' ? 'review' : d.stepId === 'verify' ? 'account' : d.stepId);
+      setDraftLoaded(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // `onboardedAlready` is captured once and never changes; it is listed only
+    // to satisfy the exhaustive-deps check.
+  }, [onboardedAlready, alreadySignedIn]);
+
+  useEffect(() => {
+    if (!draftLoaded) return;
+    const draft: OnboardingDraft = {
+      stepId,
+      sex,
+      workouts,
+      heightUnit,
+      cmStr,
+      ftStr,
+      inStr,
+      weightUnit,
+      weightVal,
+      birthDate,
+      goalType,
+      targetVal,
+      timeframe,
+      customDate,
+      diet,
+      name,
+      email,
+    };
+    storage.set(StorageKeys.onboardingDraft, draft);
+  }, [
+    draftLoaded, stepId, sex, workouts, heightUnit, cmStr, ftStr, inStr, weightUnit,
+    weightVal, birthDate, goalType, targetVal, timeframe, customDate, diet, name, email,
+  ]);
+
+  // --- Save the plan as soon as there *is* one ------------------------------
+  //
+  // This is the whole fix for onboarding data going missing. It used to run
+  // after sign-up returned, which meant every answer lived only in this
+  // component's state until an account existed — and with email confirmation
+  // turned on, sign-up never "succeeds" in the same session, so the plan was
+  // computed, shown, and then dropped. Saving it here makes the profile durable
+  // in AsyncStorage before the account step is even reached; whatever happens
+  // to sign-up afterwards, the plan is already the user's.
+  const planSaved = useRef(false);
+
+  function savePlan() {
+    if (!metrics || !goals) return;
+    planSaved.current = true;
+    setUnits(weightUnit === 'lbs' ? 'imperial' : 'metric');
+    completeOnboarding({ metrics, goals });
+  }
+
+  useEffect(() => {
+    // Only auto-save while signed out. For a signed-in user `onboarded` is what
+    // the router gates the app on, so writing it here would tear this screen
+    // down before the plan it just computed had been shown.
+    if (alreadySignedIn) return;
+    if (stepId !== 'plan' || !metrics || !goals || planSaved.current) return;
+    planSaved.current = true;
+    setUnits(weightUnit === 'lbs' ? 'imperial' : 'metric');
+    completeOnboarding({ metrics, goals });
+  }, [alreadySignedIn, stepId, metrics, goals, weightUnit, setUnits, completeOnboarding]);
+
+  // Editing an answer after the plan was saved must update the saved plan too,
+  // or the review screen and the stored profile quietly disagree.
+  useEffect(() => {
+    if (!planSaved.current || !metrics || !goals) return;
+    completeOnboarding({ metrics, goals });
+  }, [metrics, goals, completeOnboarding]);
+
   async function finish(provider: 'google' | 'email') {
     if (!metrics || !goals) return;
     const finalName = name.trim() || (provider === 'email' ? email.split('@')[0] : 'You');
@@ -185,19 +370,31 @@ export default function OnboardingScreen() {
         setAuthError(err);
         return;
       }
-    } else {
-      setAuthBusy(true);
-      const err = await signUpWithEmail(finalName, email.trim(), password);
-      setAuthBusy(false);
-      if (err) {
-        setAuthError(err);
-        return;
-      }
+      saveName(finalName);
+      await storage.remove(StorageKeys.onboardingDraft);
+      return;
     }
 
-    // Auth succeeded — persist the plan. DiaryContext seeds the cloud from this.
-    setUnits(weightUnit === 'lbs' ? 'imperial' : 'metric');
-    completeOnboarding({ name: finalName, metrics, goals });
+    setAuthBusy(true);
+    const result = await signUpWithEmail(finalName, email.trim(), password);
+    setAuthBusy(false);
+
+    if (result.status === 'error') {
+      setAuthError(result.message);
+      return;
+    }
+
+    // The account exists either way, so the name belongs on the profile now.
+    saveName(finalName);
+
+    if (result.status === 'needs-verification') {
+      // Not a failure. Hand over to the verify step, which waits for the
+      // confirmation instead of dumping the user back to a sign-in form.
+      setStepId('verify');
+      return;
+    }
+
+    await storage.remove(StorageKeys.onboardingDraft);
   }
 
   // Progress across the *input* steps only.
@@ -274,6 +471,8 @@ export default function OnboardingScreen() {
               usesSupabase={usesSupabase}
               authError={authError}
               authBusy={authBusy}
+              onSignIn={signInWithEmail}
+              onResend={resendVerification}
               metrics={metrics}
               goals={goals}
               onEdit={editStep}
@@ -286,7 +485,7 @@ export default function OnboardingScreen() {
         </ScrollView>
 
         {/* Footer button for standard steps */}
-        {stepId !== 'calculating' && stepId !== 'account' && (
+        {stepId !== 'calculating' && stepId !== 'account' && stepId !== 'verify' && (
           <View style={[styles.footer, { paddingBottom: insets.bottom + Spacing.three, borderTopColor: theme.border }]}>
             <View style={styles.footerInner}>
               <Button
@@ -361,6 +560,8 @@ type StepBodyProps = {
   usesSupabase: boolean;
   authError: string | null;
   authBusy: boolean;
+  onSignIn: (email: string, password: string) => Promise<string | null>;
+  onResend: (email: string) => Promise<string | null>;
   metrics: UserMetrics | null;
   goals: ReturnType<typeof computeGoals> | null;
   onEdit: (id: StepId) => void;
@@ -549,6 +750,9 @@ function StepBody(p: StepBodyProps) {
     case 'account':
       return <AccountStep {...p} />;
 
+    case 'verify':
+      return <VerifyStep {...p} />;
+
     default:
       return null;
   }
@@ -735,6 +939,115 @@ function AccountStep(p: StepBodyProps) {
         </ThemedText>
       )}
       <Button title="Create account" onPress={p.onEmail} disabled={!canCreate} loading={p.authBusy} />
+      <ThemedText type="small" themeColor="textSecondary">
+        Your plan is already saved on this phone. Creating an account backs it up and
+        lets you restore it if you change device.
+      </ThemedText>
+    </>
+  );
+}
+
+/** How often to test whether the confirmation link has been followed. */
+const VERIFY_POLL_MS = 3000;
+/** Stop polling after this long; the manual button still works afterwards. */
+const VERIFY_POLL_LIMIT_MS = 10 * 60 * 1000;
+
+/**
+ * Waiting for the confirmation email.
+ *
+ * The old behaviour ended the wizard here with an error-styled "check your
+ * email, then sign in" and no way forward, so the user had to back out through
+ * screens they had already finished and re-enter credentials they had just
+ * typed. This screen instead keeps hold of those credentials and quietly
+ * retries the sign-in that will start working the moment the link is followed.
+ *
+ * Polling is the fallback, not the mechanism: tapping the link normally
+ * reopens the app and `AuthContext`'s deep-link handler establishes the session
+ * immediately. But that depends on the redirect URL being allow-listed in the
+ * Supabase dashboard and on the mail client actually handing off to the app,
+ * neither of which is guaranteed — whereas "the password they just chose starts
+ * working once the account is confirmed" is guaranteed. Nothing here weakens
+ * verification: an unconfirmed account keeps failing sign-in, which is exactly
+ * what confirmation is for.
+ */
+function VerifyStep(p: StepBodyProps) {
+  const [status, setStatus] = useState<'waiting' | 'checking' | 'failed'>('waiting');
+  const [note, setNote] = useState<string | null>(null);
+  // Lazy so the clock is read once, on mount, rather than on every render.
+  const startedAt = useRef<number | null>(null);
+
+  const email = p.email.trim();
+  const password = p.password;
+  const onSignIn = p.onSignIn;
+
+  useEffect(() => {
+    if (!p.usesSupabase || !password) return;
+    startedAt.current = Date.now();
+    let cancelled = false;
+
+    const id = setInterval(() => {
+      if (cancelled) return;
+      if (Date.now() - (startedAt.current ?? 0) > VERIFY_POLL_LIMIT_MS) {
+        clearInterval(id);
+        return;
+      }
+      // A failure here is the expected state while the mail is unread, so it
+      // deliberately does not surface as an error.
+      onSignIn(email, password);
+    }, VERIFY_POLL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [email, password, onSignIn, p.usesSupabase]);
+
+  async function checkNow() {
+    setStatus('checking');
+    setNote(null);
+    const err = await onSignIn(email, password);
+    // On success the session flips and this screen unmounts, so reaching here
+    // at all means it did not work yet.
+    setStatus(err ? 'failed' : 'waiting');
+    if (err) setNote("That didn't work yet — open the link in the email first.");
+  }
+
+  async function resend() {
+    setNote(null);
+    const err = await p.onResend(email);
+    setNote(err ?? 'Sent. Check your inbox again in a moment.');
+  }
+
+  return (
+    <>
+      <Header
+        title="Confirm your email"
+        subtitle={`We sent a link to ${email}. Open it and you'll come straight back here.`}
+      />
+      <Card style={styles.verifyCard}>
+        <Ionicons name="mail-open-outline" size={28} color={p.theme.tint} />
+        <ThemedText type="smallBold">Waiting for you to confirm…</ThemedText>
+        <ThemedText type="small" themeColor="textSecondary" style={styles.verifyBody}>
+          This screen unlocks by itself the moment the link is opened. Your plan is
+          already saved — nothing you entered can be lost from here.
+        </ThemedText>
+      </Card>
+      {note && (
+        <ThemedText type="small" themeColor="textSecondary">
+          {note}
+        </ThemedText>
+      )}
+      <Button
+        title="I've confirmed — continue"
+        icon="arrow-forward"
+        onPress={checkNow}
+        loading={status === 'checking'}
+      />
+      <Pressable onPress={resend} style={styles.editLink}>
+        <ThemedText type="smallBold" style={{ color: p.theme.tint }}>
+          Resend the email
+        </ThemedText>
+      </Pressable>
     </>
   );
 }
@@ -796,6 +1109,14 @@ const styles = StyleSheet.create({
     fontSize: 56,
     lineHeight: 60,
     fontWeight: '800',
+  },
+  verifyCard: {
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingVertical: Spacing.five,
+  },
+  verifyBody: {
+    textAlign: 'center',
   },
   reviewCard: {
     paddingVertical: Spacing.one,

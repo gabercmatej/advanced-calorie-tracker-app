@@ -85,6 +85,9 @@ export async function lookupBarcode(code: string): Promise<FoodEstimate | null> 
       carbs: nonNeg(num(n[`carbohydrates_${basis}`])),
       fat: nonNeg(num(n[`fat_${basis}`])),
     },
+    // Fibre is optional on a label and often absent from the database. Left
+    // undefined rather than zeroed, so "not stated" stays distinct from "none".
+    fiber: num(n[`fiber_${basis}`]) == null ? undefined : nonNeg(num(n[`fiber_${basis}`])),
     // Label-sourced data is far more reliable than a photo/text guess.
     confidence: 0.95,
   };

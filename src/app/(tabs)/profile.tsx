@@ -20,10 +20,22 @@ import {
   computeGoals,
   DIET_LABEL,
   GOAL_LABEL,
+  kgToLb,
+  lbToKg,
   macrosFromCalories,
   relativeDayLabel,
   toDateKey,
 } from '@/lib/nutrition';
+import {
+  formatTenths,
+  fromTenths,
+  parseWeightInput,
+  sanitizeWeightText,
+  toTenths,
+  type WeightUnit,
+} from '@/lib/weight-input';
+import { exportBackup, pickBackup, saveFile } from '@/lib/backup';
+import { backupFilename, serializeBackup, toCsv } from '@/lib/backup-format';
 import {
   cancelReminders,
   requestNotificationPermission,
@@ -40,6 +52,16 @@ import {
   type WorkoutsPerWeek,
 } from '@/types';
 
+/** What the "Your data" card says about where the diary is stored. */
+const SYNC_COPY: Record<string, string> = {
+  local: 'Saved on this phone only. No backend is configured, so an export is your only backup.',
+  'signed-out': 'Saved on this phone. Sign in to mirror your diary to the cloud as well.',
+  syncing: 'Syncing with the cloud…',
+  synced: 'Saved on this phone and mirrored to the cloud.',
+  error:
+    "Saved on this phone. The last cloud sync failed — nothing was lost, and it will retry next time you open the app.",
+};
+
 function notify(msg: string) {
   if (Platform.OS === 'web') return;
   Alert.alert('Saved', msg);
@@ -49,16 +71,45 @@ export default function ProfileScreen() {
   const theme = useTheme();
   const gradients = useGradients();
   const { session, signOut } = useAuth();
-  const { profile, updateGoals, setUnits, setTheme, completeOnboarding, setNotificationsEnabled } =
-    useDiary();
+  const {
+    profile,
+    entries,
+    weights,
+    savedFoods,
+    updateGoals,
+    setUnits,
+    setTheme,
+    completeOnboarding,
+    setNotificationsEnabled,
+    syncStatus,
+    restore,
+  } = useDiary();
   const metrics = profile.metrics;
 
   const [calories, setCalories] = useState(String(profile.goals.calories));
-  const [weightKg, setWeightKg] = useState(String(metrics?.weightKg ?? ''));
+
+  /**
+   * These two fields are shown in the unit the rest of the app uses, and stored
+   * in kilograms like everything else. They used to be labelled "kg" whatever
+   * `profile.units` said, so an imperial user typing the number they weigh
+   * ("180") silently set their metrics to 180 kg — and the plan built on it.
+   */
+  const unitLabel: WeightUnit = profile.units === 'imperial' ? 'lbs' : 'kg';
+  const toDisplay = (kg: number) => formatTenths(toTenths(unitLabel === 'lbs' ? kgToLb(kg) : kg));
+  const toKg = (text: string): number | null => {
+    const tenths = parseWeightInput(text);
+    if (tenths == null) return null;
+    const value = fromTenths(tenths);
+    return Math.round((unitLabel === 'lbs' ? lbToKg(value) : value) * 10) / 10;
+  };
+
+  const [weightKg, setWeightKg] = useState(metrics ? toDisplay(metrics.weightKg) : '');
   const [workouts, setWorkouts] = useState<WorkoutsPerWeek>(metrics?.workoutsPerWeek ?? '3-5');
   const [goalType, setGoalType] = useState<GoalType>(metrics?.goalType ?? 'maintain');
   const [diet, setDiet] = useState<DietType>(metrics?.diet ?? 'balanced');
-  const [targetWeightKg, setTargetWeightKg] = useState(String(metrics?.targetWeightKg ?? ''));
+  const [targetWeightKg, setTargetWeightKg] = useState(
+    metrics?.targetWeightKg != null ? toDisplay(metrics.targetWeightKg) : '',
+  );
   // Timeframe preset (days as string) or 'custom' to pick an exact date.
   const [timeframe, setTimeframe] = useState('60');
   const [customDate, setCustomDate] = useState('');
@@ -82,11 +133,11 @@ export default function ProfileScreen() {
     if (!metrics) return;
     const nextMetrics = {
       ...metrics,
-      weightKg: Number(weightKg) || metrics.weightKg,
+      weightKg: toKg(weightKg) ?? metrics.weightKg,
       workoutsPerWeek: workouts,
       goalType,
       diet,
-      targetWeightKg: wantsTarget && targetWeightKg ? Number(targetWeightKg) : undefined,
+      targetWeightKg: wantsTarget ? (toKg(targetWeightKg) ?? undefined) : undefined,
       targetDate: wantsTarget && targetDate ? targetDate : undefined,
     };
     const goals = computeGoals(nextMetrics);
@@ -109,6 +160,58 @@ export default function ProfileScreen() {
     } else {
       setNotificationsEnabled(false);
       await cancelReminders();
+    }
+  }
+
+  const [busy, setBusy] = useState<'export' | 'csv' | 'import' | null>(null);
+
+  function report(title: string, message: string) {
+    if (Platform.OS === 'web') window.alert(`${title}\n\n${message}`);
+    else Alert.alert(title, message);
+  }
+
+  async function onExportJson() {
+    setBusy('export');
+    try {
+      await exportBackup(serializeBackup({ profile, entries, weights, savedFoods }));
+    } catch (err) {
+      report('Export failed', err instanceof Error ? err.message : 'Could not write the file.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onExportCsv() {
+    setBusy('csv');
+    try {
+      await saveFile(toCsv(entries), backupFilename().replace(/\.json$/, '.csv'), 'text/csv');
+    } catch (err) {
+      report('Export failed', err instanceof Error ? err.message : 'Could not write the file.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onImport() {
+    setBusy('import');
+    try {
+      const result = await pickBackup();
+      if (!result) return; // cancelled
+      if (!result.ok || !result.backup) {
+        report('Could not restore', result.error ?? 'That file could not be read.');
+        return;
+      }
+      const { entriesAdded, weightsAdded } = restore(result.backup);
+      const skipped = result.skipped ? ` ${result.skipped} damaged record(s) were skipped.` : '';
+      report(
+        'Restored',
+        `Added ${entriesAdded} food ${entriesAdded === 1 ? 'entry' : 'entries'} and ${weightsAdded} ` +
+          `weigh-in${weightsAdded === 1 ? '' : 's'}. Nothing already in your diary was changed.${skipped}`,
+      );
+    } catch (err) {
+      report('Could not restore', err instanceof Error ? err.message : 'That file could not be read.');
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -244,9 +347,9 @@ export default function ProfileScreen() {
           <Field
             label="Current weight"
             value={weightKg}
-            onChangeText={setWeightKg}
+            onChangeText={(t) => setWeightKg(sanitizeWeightText(t))}
             keyboardType="decimal-pad"
-            suffix="kg"
+            suffix={unitLabel}
           />
 
           <View style={styles.field}>
@@ -283,9 +386,9 @@ export default function ProfileScreen() {
               <Field
                 label="Target weight"
                 value={targetWeightKg}
-                onChangeText={setTargetWeightKg}
+                onChangeText={(t) => setTargetWeightKg(sanitizeWeightText(t))}
                 keyboardType="decimal-pad"
-                suffix="kg"
+                suffix={unitLabel}
               />
               <View style={styles.field}>
                 <ThemedText type="smallBold">Reach it by</ThemedText>
@@ -328,8 +431,54 @@ export default function ProfileScreen() {
         </Appear>
       )}
 
-      {/* About */}
+      {/* Your data */}
       <Appear delay={310}>
+        <Card>
+          <ThemedText type="subtitle" style={styles.cardTitle}>
+            Your data
+          </ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            {SYNC_COPY[syncStatus]}
+          </ThemedText>
+
+          <View style={styles.field}>
+            <Button
+              title="Export backup (JSON)"
+              icon="download-outline"
+              variant="secondary"
+              loading={busy === 'export'}
+              disabled={busy !== null}
+              onPress={onExportJson}
+            />
+            <Button
+              title="Export for spreadsheets (CSV)"
+              icon="grid-outline"
+              variant="secondary"
+              loading={busy === 'csv'}
+              disabled={busy !== null}
+              onPress={onExportCsv}
+            />
+            <Button
+              title="Restore from backup"
+              icon="cloud-upload-outline"
+              variant="secondary"
+              loading={busy === 'import'}
+              disabled={busy !== null}
+              onPress={onImport}
+            />
+          </View>
+
+          <ThemedText type="small" themeColor="textSecondary">
+            {entries.length} logged {entries.length === 1 ? 'food' : 'foods'} and {weights.length}{' '}
+            weigh-{weights.length === 1 ? 'in' : 'ins'}. Restoring only ever adds history back —
+            it never overwrites what is already here. Meal photos stay on this phone and are not
+            part of a backup.
+          </ThemedText>
+        </Card>
+      </Appear>
+
+      {/* About */}
+      <Appear delay={350}>
         <Card>
           <ThemedText type="subtitle" style={styles.cardTitle}>
             About

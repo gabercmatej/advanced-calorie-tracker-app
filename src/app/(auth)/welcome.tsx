@@ -2,8 +2,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import { useEffect } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { useAuth } from '@/context/AuthContext';
+import { useDiary } from '@/context/DiaryContext';
 
 import { Button } from '@/components/button';
 import { Appear, Floating, PressableScale } from '@/components/motion';
@@ -36,6 +40,16 @@ export default function WelcomeScreen() {
   const gradients = useGradients();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { session } = useAuth();
+  const { profile } = useDiary();
+
+  // Signed in but no plan yet — a confirmed account on a fresh device, or an
+  // account created before onboarding finished. Asking them to "Get started"
+  // as though they were a stranger is wrong; send them to the one thing
+  // actually outstanding.
+  useEffect(() => {
+    if (session) router.replace('/onboarding');
+  }, [session, router]);
 
   return (
     <ThemedView style={styles.flex}>
@@ -112,7 +126,15 @@ export default function WelcomeScreen() {
           </View>
 
           <Appear delay={600} style={styles.footer}>
-            <Button title="Get started" icon="arrow-forward" pill onPress={() => router.push('/onboarding')} />
+            <Button
+              // Someone who already has a plan but no account left partway
+              // through sign-up. "Get started" would suggest their answers are
+              // gone; they are not, and the wizard resumes where they stopped.
+              title={profile.onboarded ? 'Finish setting up' : 'Get started'}
+              icon="arrow-forward"
+              pill
+              onPress={() => router.push('/onboarding')}
+            />
             <PressableScale
               style={styles.signInRow}
               scaleTo={0.96}

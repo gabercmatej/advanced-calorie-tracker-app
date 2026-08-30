@@ -18,6 +18,7 @@ import { useGradients } from '@/hooks/use-gradients';
 import { useTheme } from '@/hooks/use-theme';
 import { haptics } from '@/lib/haptics';
 import {
+  fiberTarget,
   formatWeight,
   fromDateKey,
   progress,
@@ -196,7 +197,13 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.macros}>
-            <MacroRow consumed={totals.macros} goal={goal.macros} />
+            <MacroRow
+              consumed={totals.macros}
+              goal={goal.macros}
+              fiber={totals.fiber}
+              fiberGoal={fiberTarget(goal.calories)}
+              fiberSources={totals.fiberSources}
+            />
           </View>
         </GradientCard>
       </Appear>

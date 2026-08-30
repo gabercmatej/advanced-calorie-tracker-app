@@ -12,38 +12,71 @@ import { Radius, Spacing } from '@/constants/theme';
 // point the scanner at other codes. Non-product codes just fail the lookup.
 const BARCODE_TYPES = ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39', 'qr'] as const;
 
+/** How long to ignore the camera after a hit, so one product scans once. */
+const REARM_MS = 1600;
+
 /**
- * Full-screen camera modal that scans a product barcode and reports the raw
- * code via `onScanned` (exactly once per open). The parent looks the code up
- * and closes the modal. Camera colors are fixed light-on-dark regardless of
- * theme, since the preview is always a dark camera feed.
+ * Full-screen camera modal that scans product barcodes and reports each raw
+ * code via `onScanned`.
+ *
+ * It stays open and re-arms after every hit, because a single meal often
+ * contains several packaged items — closing after the first would make
+ * scanning two tins a four-tap round trip. The parent looks each code up, feeds
+ * a line of `feedback` back in, and closes when the user is done.
+ *
+ * Camera colors are fixed light-on-dark regardless of theme, since the preview
+ * is always a dark camera feed.
  */
 export function BarcodeScanner({
   visible,
   onClose,
   onScanned,
+  feedback,
 }: {
   visible: boolean;
   onClose: () => void;
   onScanned: (code: string) => void;
+  /** Result of the last lookup, shown over the preview. */
+  feedback?: string | null;
 }) {
   const [permission, requestPermission] = useCameraPermissions();
   const insets = useSafeAreaInsets();
-  // Guard so the rapid-fire onBarcodeScanned callback only reports one code.
+  // Guards the rapid-fire onBarcodeScanned callback: one report per product.
   const handled = useRef(false);
+  const lastCode = useRef<string | null>(null);
+  const rearmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!visible) return;
     handled.current = false;
+    lastCode.current = null;
     // Ask for camera access the first time the scanner is opened. Idempotent:
     // if already granted, this resolves without prompting.
     requestPermission();
   }, [visible, requestPermission]);
 
+  // Don't leave a timer running against an unmounted modal.
+  useEffect(
+    () => () => {
+      if (rearmTimer.current) clearTimeout(rearmTimer.current);
+    },
+    [],
+  );
+
   function handleScan(result: BarcodeScanningResult) {
     if (handled.current) return;
+    // The same barcode held in frame shouldn't add the product twice.
+    if (result.data === lastCode.current) return;
+
     handled.current = true;
+    lastCode.current = result.data;
     onScanned(result.data);
+
+    if (rearmTimer.current) clearTimeout(rearmTimer.current);
+    rearmTimer.current = setTimeout(() => {
+      handled.current = false;
+      lastCode.current = null;
+    }, REARM_MS);
   }
 
   const granted = permission?.granted ?? false;
@@ -65,17 +98,35 @@ export function BarcodeScanner({
             <Pressable
               onPress={onClose}
               hitSlop={12}
-              accessibilityLabel="Close scanner"
-              style={styles.closeButton}>
-              <Ionicons name="close" size={26} color="#fff" />
+              accessibilityRole="button"
+              accessibilityLabel="Done scanning"
+              style={styles.doneButton}>
+              <ThemedText style={styles.doneText}>Done</ThemedText>
             </Pressable>
           </View>
 
           {granted ? (
-            <View style={styles.center} pointerEvents="none">
-              <View style={styles.reticle} />
-              <ThemedText style={styles.hint}>Point at a product barcode</ThemedText>
-            </View>
+            <>
+              <View style={styles.center} pointerEvents="none">
+                <View style={styles.reticle} />
+                <ThemedText style={styles.hint}>
+                  Point at a product barcode — scan as many as you like
+                </ThemedText>
+              </View>
+
+              {feedback ? (
+                <View
+                  style={[styles.feedback, { paddingBottom: insets.bottom + Spacing.four }]}
+                  pointerEvents="none">
+                  <View style={styles.feedbackPill}>
+                    <Ionicons name="checkmark-circle" size={16} color="#fff" />
+                    <ThemedText style={styles.feedbackText} numberOfLines={2}>
+                      {feedback}
+                    </ThemedText>
+                  </View>
+                </View>
+              ) : null}
+            </>
           ) : (
             <View style={styles.permission}>
               <Ionicons name="barcode-outline" size={48} color="#fff" />
@@ -113,13 +164,41 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     paddingHorizontal: Spacing.four,
   },
-  closeButton: {
-    width: 40,
-    height: 40,
+  doneButton: {
+    minHeight: 40,
+    paddingHorizontal: Spacing.four,
     borderRadius: Radius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  doneText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  feedback: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    paddingHorizontal: Spacing.four,
+  },
+  feedbackPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    borderRadius: Radius.full,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    maxWidth: '100%',
+  },
+  feedbackText: {
+    color: '#fff',
+    fontSize: 14,
+    flexShrink: 1,
   },
   center: {
     position: 'absolute',

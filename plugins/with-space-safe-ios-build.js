@@ -71,12 +71,13 @@ function withQuotedAppConfigPhase(config) {
 
       if (contents.includes('with-space-safe-ios-build.js')) return cfg;
 
-      // Append inside the existing `post_install do |installer|` block.
+      // Splice in *before* the `end` that closes `post_install do |installer|`,
+      // so the hook can still see `installer`.
       const marker = 'react_native_post_install(';
-      const blockEnd = contents.indexOf('end', contents.indexOf(marker));
-      const insertAt = contents.indexOf('\n', blockEnd) + 1;
+      const markerAt = contents.indexOf(marker);
+      const blockEnd = markerAt === -1 ? -1 : contents.indexOf('\n  end', markerAt);
 
-      if (blockEnd === -1 || insertAt === 0) {
+      if (blockEnd === -1) {
         throw new Error(
           'with-space-safe-ios-build: could not find the post_install block in the generated Podfile.'
         );
@@ -84,7 +85,7 @@ function withQuotedAppConfigPhase(config) {
 
       fs.writeFileSync(
         podfile,
-        contents.slice(0, insertAt) + POST_INSTALL_HOOK + contents.slice(insertAt)
+        contents.slice(0, blockEnd) + '\n' + POST_INSTALL_HOOK + contents.slice(blockEnd)
       );
 
       return cfg;

@@ -1,10 +1,10 @@
-import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Breakdown } from '@/components/breakdown';
 import { Button } from '@/components/button';
 import { Field } from '@/components/field';
 import { Appear, PressableScale } from '@/components/motion';
@@ -15,7 +15,6 @@ import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { haptics } from '@/lib/haptics';
 import { useDiary } from '@/context/DiaryContext';
 import { useEntryPhoto } from '@/hooks/use-entry-photo';
-import { useTheme } from '@/hooks/use-theme';
 import { useDismiss } from '@/hooks/use-dismiss';
 import { MEAL_TYPES, type MealType } from '@/types';
 
@@ -23,7 +22,6 @@ const MEAL_OPTIONS = MEAL_TYPES.map((m) => ({ value: m, label: m[0].toUpperCase(
 
 export default function EditEntryScreen() {
   const insets = useSafeAreaInsets();
-  const theme = useTheme();
   const dismiss = useDismiss('/');
   const { id } = useLocalSearchParams<{ id: string }>();
   const { entries, updateEntry, removeEntry } = useDiary();
@@ -101,24 +99,7 @@ export default function EditEntryScreen() {
           {entry.items?.length ? (
             <View style={styles.field}>
               <ThemedText type="smallBold">How this was worked out</ThemedText>
-              <View style={[styles.breakdown, { borderColor: theme.border }]}>
-                {entry.items.map((item, i) => (
-                  <View key={`${item.name}-${i}`} style={styles.breakdownRow}>
-                    <Ionicons
-                      name={item.source === 'label' ? 'pricetag' : 'sparkles-outline'}
-                      size={12}
-                      color={item.source === 'label' ? theme.success : theme.textSecondary}
-                    />
-                    <ThemedText type="small" style={styles.breakdownName} numberOfLines={1}>
-                      {item.name}
-                    </ThemedText>
-                    <ThemedText type="small" themeColor="textSecondary">
-                      {item.source === 'label' ? '' : '~'}
-                      {item.calories} kcal
-                    </ThemedText>
-                  </View>
-                ))}
-              </View>
+              <Breakdown items={entry.items} />
             </View>
           ) : null}
 
@@ -243,20 +224,5 @@ const styles = StyleSheet.create({
   delete: {
     alignItems: 'center',
     paddingVertical: Spacing.two,
-  },
-  breakdown: {
-    gap: Spacing.two,
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  breakdownRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-  },
-  breakdownName: {
-    flex: 1,
   },
 });

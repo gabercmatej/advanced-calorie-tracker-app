@@ -22,7 +22,6 @@ import {
   type DayTotals,
   type PlanAnchor,
 } from '@/lib/nutrition';
-import { notifyStreak } from '@/lib/notifications';
 import {
   deleteEntryRemote,
   deleteWeightRemote,
@@ -468,16 +467,6 @@ export function DiaryProvider({ children }: { children: ReactNode }) {
   }, [ready, recommendation, profile.goals]);
 
   const streak = useMemo(() => currentStreak(loggedDates), [loggedDates]);
-
-  // Fire a congratulatory notification when the streak grows (not on hydration).
-  const prevStreak = useRef(0);
-  useEffect(() => {
-    if (!ready) return;
-    if (streak > prevStreak.current && profile.notificationsEnabled) {
-      notifyStreak(streak);
-    }
-    prevStreak.current = streak;
-  }, [streak, ready, profile.notificationsEnabled]);
 
   const addEntry = useCallback((entry: Omit<FoodEntry, 'id' | 'createdAt'>) => {
     const now = Date.now();

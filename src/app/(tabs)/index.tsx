@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
@@ -11,6 +10,7 @@ import { Appear, CountUp, Floating, PressableScale } from '@/components/motion';
 import { Screen } from '@/components/screen';
 import { StreakBadge } from '@/components/streak-badge';
 import { ThemedText } from '@/components/themed-text';
+import { WeekStrip } from '@/components/week-strip';
 import { Radius, Shadow, Spacing } from '@/constants/theme';
 import { useDiary } from '@/context/DiaryContext';
 import { useEntryPhoto } from '@/hooks/use-entry-photo';
@@ -20,16 +20,13 @@ import { haptics } from '@/lib/haptics';
 import {
   fiberTarget,
   formatWeight,
-  fromDateKey,
   progress,
   relativeDayLabel,
   remaining,
   toDateKey,
-  weekOf,
 } from '@/lib/nutrition';
+import { canGoForward as canPageForward, shiftWeek } from '@/lib/week-nav';
 import type { FoodEntry, Macros } from '@/types';
-
-const WEEKDAY = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -55,8 +52,19 @@ export default function HomeScreen() {
   } = useDiary();
 
   const today = toDateKey();
-  const week = weekOf(selectedDate);
   const isToday = selectedDate === today;
+  const canGoForward = canPageForward(selectedDate, today);
+
+  /**
+   * Page the strip. Only the day in focus moves — this is history viewing, and
+   * nothing about it changes where the ＋ button logs food.
+   */
+  function pageWeek(direction: -1 | 1) {
+    const next = shiftWeek(selectedDate, direction, today);
+    if (next === selectedDate) return;
+    haptics.selection();
+    setSelectedDate(next);
+  }
 
   const entries = entriesForDate(selectedDate);
   const totals = totalsForDate(selectedDate);
@@ -72,56 +80,23 @@ export default function HomeScreen() {
       title={`${greeting()}, ${profile.name} 👋`}
       subtitle="Stay consistent with your goals today."
       headerRight={<StreakBadge days={streak} />}>
-      {/* Week strip — tap any past day to point Home at it (no separate screen) */}
-      <Appear delay={60} style={styles.week}>
-        {week.map((key) => {
-          const isSelected = key === selectedDate;
-          const isTodayCell = key === today;
-          const isFuture = key > today;
-          const cals = totalsForDate(key).calories;
-          const met = loggedDates.has(key) && cals > 0 && cals <= goal.calories * 1.05;
-          const dow = fromDateKey(key).getDay();
-          return (
-            <PressableScale
-              key={key}
-              scaleTo={0.9}
-              style={styles.day}
-              disabled={isFuture}
-              onPress={() => {
-                haptics.selection();
-                setSelectedDate(key);
-              }}>
-              <ThemedText
-                type={isTodayCell ? 'smallBold' : 'small'}
-                themeColor={isTodayCell ? 'tint' : 'textSecondary'}>
-                {WEEKDAY[dow]}
-              </ThemedText>
-              <View
-                style={[
-                  styles.dayCircle,
-                  {
-                    backgroundColor: met ? 'transparent' : isSelected ? theme.tintSoft : 'transparent',
-                    borderColor: isSelected ? theme.tint : met ? 'transparent' : theme.border,
-                    borderWidth: isSelected ? 2 : 1.5,
-                  },
-                ]}>
-                {met ? (
-                  <LinearGradient
-                    colors={gradients.brand}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={[StyleSheet.absoluteFill, { borderRadius: Radius.full }]}
-                  />
-                ) : null}
-                <ThemedText
-                  type={isSelected || met ? 'smallBold' : 'small'}
-                  style={{ color: met ? theme.onTint : isFuture ? theme.tabIconDefault : theme.text }}>
-                  {fromDateKey(key).getDate()}
-                </ThemedText>
-              </View>
-            </PressableScale>
-          );
-        })}
+      {/* Week strip — swipe to page through past weeks, tap any past day to
+          point Home at it (there is no separate day screen) */}
+      <Appear delay={60}>
+        <WeekStrip
+          selectedDate={selectedDate}
+          today={today}
+          canGoForward={canGoForward}
+          onShiftWeek={pageWeek}
+          onSelectDate={(key) => {
+            haptics.selection();
+            setSelectedDate(key);
+          }}
+          isMet={(key) => {
+            const cals = totalsForDate(key).calories;
+            return loggedDates.has(key) && cals > 0 && cals <= goal.calories * 1.05;
+          }}
+        />
       </Appear>
 
       {/* Which day is in focus + quick jump back to today */}
@@ -129,22 +104,28 @@ export default function HomeScreen() {
         <ThemedText type="smallBold" themeColor="textSecondary">
           {relativeDayLabel(selectedDate)}
         </ThemedText>
-        {!isToday && (
-          <PressableScale
-            onPress={() => {
-              haptics.light();
-              setSelectedDate(today);
-            }}
-            scaleTo={0.92}
-            style={[styles.todayChip, { backgroundColor: theme.tintSoft }]}
-            accessibilityRole="button"
-            accessibilityLabel="Jump to today">
-            <Ionicons name="today-outline" size={13} color={theme.tint} />
-            <ThemedText type="small" style={{ color: theme.tint }}>
-              Today
-            </ThemedText>
-          </PressableScale>
-        )}
+        <View style={styles.dateBarRight}>
+          {/* The same paging the swipe does. A gesture-only affordance would be
+              undiscoverable, and unreachable with a keyboard or a screen reader. */}
+          <WeekArrow direction={-1} onPress={() => pageWeek(-1)} enabled />
+          <WeekArrow direction={1} onPress={() => pageWeek(1)} enabled={canGoForward} />
+          {!isToday && (
+            <PressableScale
+              onPress={() => {
+                haptics.light();
+                setSelectedDate(today);
+              }}
+              scaleTo={0.92}
+              style={[styles.todayChip, { backgroundColor: theme.tintSoft }]}
+              accessibilityRole="button"
+              accessibilityLabel="Jump to today">
+              <Ionicons name="today-outline" size={13} color={theme.tint} />
+              <ThemedText type="small" style={{ color: theme.tint }}>
+                Today
+              </ThemedText>
+            </PressableScale>
+          )}
+        </View>
       </View>
 
       {/* Hero: big animated calorie ring with floating nutrient chips */}
@@ -310,6 +291,37 @@ export default function HomeScreen() {
   );
 }
 
+function WeekArrow({
+  direction,
+  onPress,
+  enabled,
+}: {
+  direction: -1 | 1;
+  onPress: () => void;
+  enabled: boolean;
+}) {
+  const theme = useTheme();
+  return (
+    <PressableScale
+      onPress={onPress}
+      disabled={!enabled}
+      scaleTo={0.88}
+      style={[
+        styles.weekArrow,
+        { backgroundColor: theme.backgroundElement, opacity: enabled ? 1 : 0.35 },
+      ]}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: !enabled }}
+      accessibilityLabel={direction === -1 ? 'Previous week' : 'Next week'}>
+      <Ionicons
+        name={direction === -1 ? 'chevron-back' : 'chevron-forward'}
+        size={14}
+        color={theme.textSecondary}
+      />
+    </PressableScale>
+  );
+}
+
 function NutrientChip({
   color,
   label,
@@ -405,23 +417,17 @@ function MacroTag({ color, text }: { color: string; text: string }) {
 }
 
 const styles = StyleSheet.create({
-  week: {
+  dateBarRight: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  day: {
     alignItems: 'center',
-    gap: Spacing.one,
-    flex: 1,
+    gap: Spacing.two,
   },
-  dayCircle: {
-    width: 38,
-    height: 38,
+  weekArrow: {
+    width: 26,
+    height: 26,
     borderRadius: Radius.full,
-    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
   },
   dateBar: {
     flexDirection: 'row',

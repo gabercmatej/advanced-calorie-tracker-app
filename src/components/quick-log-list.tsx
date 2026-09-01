@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { useState } from 'react';
+import { LayoutAnimation, Platform, StyleSheet, TextInput, UIManager, View } from 'react-native';
 
 import { PressableScale } from '@/components/motion';
 import { Segmented } from '@/components/segmented';
@@ -11,6 +12,10 @@ import { haptics } from '@/lib/haptics';
 import type { QuickFood } from '@/lib/quick-log';
 
 export type QuickTab = 'recent' | 'saved';
+
+// Old Android needs this switched on explicitly before LayoutAnimation does
+// anything; on iOS and web it is already available.
+if (Platform.OS === 'android') UIManager.setLayoutAnimationEnabledExperimental?.(true);
 
 interface Props {
   tab: QuickTab;
@@ -48,6 +53,13 @@ const TABS = [
  * different: the row opens the food for review (change the portion, correct a
  * number), while the ＋ logs it unchanged in a single tap. On a long cut the
  * second is the common case by a wide margin, so it gets the tinted control.
+ *
+ * **The list starts collapsed.** After a few months of logging it had grown
+ * into a wall the capture buttons sat below, so opening the logger meant
+ * scrolling past history to reach the camera. Collapsed it is one row; the
+ * search box stays out of the fold because it is compact and answers a
+ * different question, and search results always render regardless — asking for
+ * something specific should never also require expanding a section.
  */
 export function QuickLogList({
   tab,
@@ -63,19 +75,51 @@ export function QuickLogList({
   onLogLibrary,
 }: Props) {
   const theme = useTheme();
+  const [open, setOpen] = useState(false);
   const searching = query.trim().length > 0;
   const list = tab === 'recent' ? recent : saved;
 
+  function toggle() {
+    haptics.light();
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setOpen((prev) => !prev);
+  }
+
   return (
     <View style={styles.wrap}>
-      <View style={styles.header}>
-        <ThemedText type="smallBold">Log again</ThemedText>
-        {!searching ? (
-          <View style={styles.tabs}>
-            <Segmented value={tab} onChange={onTabChange} options={TABS} />
-          </View>
-        ) : null}
-      </View>
+      <PressableScale
+        onPress={toggle}
+        scaleTo={0.99}
+        style={styles.header}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={`${open ? 'Hide' : 'Show'} ${
+          tab === 'recent' ? 'recent foods' : 'saved foods'
+        }`}>
+        <ThemedText type="smallBold">
+          {tab === 'recent' ? 'Recent foods' : 'Saved foods'}
+        </ThemedText>
+        <View style={styles.headerRight}>
+          {list.length > 0 ? (
+            <View style={[styles.countPill, { backgroundColor: theme.tintSoft }]}>
+              <ThemedText type="small" style={{ color: theme.tint }}>
+                {list.length}
+              </ThemedText>
+            </View>
+          ) : null}
+          <Ionicons
+            name={open ? 'chevron-up' : 'chevron-down'}
+            size={18}
+            color={theme.textSecondary}
+          />
+        </View>
+      </PressableScale>
+
+      {open && !searching ? (
+        <View style={styles.tabs}>
+          <Segmented value={tab} onChange={onTabChange} options={TABS} />
+        </View>
+      ) : null}
 
       <View
         style={[
@@ -126,7 +170,7 @@ export function QuickLogList({
             })}
           </View>
         )
-      ) : list.length === 0 ? (
+      ) : !open ? null : list.length === 0 ? (
         <ThemedText type="small" themeColor="textSecondary">
           {tab === 'recent'
             ? 'Foods you log will show up here, ready to add again in one tap.'
@@ -212,9 +256,22 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     minHeight: 30,
   },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  countPill: {
+    minWidth: 22,
+    height: 20,
+    borderRadius: Radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.one,
+  },
   tabs: {
-    flex: 1,
-    maxWidth: 190,
+    alignSelf: 'flex-start',
+    minWidth: 190,
   },
   search: {
     flexDirection: 'row',

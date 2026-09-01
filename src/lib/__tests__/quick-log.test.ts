@@ -44,13 +44,17 @@ describe('recentFoods', () => {
     assert.equal(list[0].lastLogged, '2026-08-28');
   });
 
-  it('ranks a frequent staple above a one-off logged more recently', () => {
+  it('puts the most recently eaten food first, however rarely it is eaten', () => {
+    // The list is short and is called "recent", so it orders by when a food was
+    // last actually eaten. A staple logged eight times last week does not
+    // outrank the thing eaten an hour ago.
     const staple = Array.from({ length: 8 }, (_, i) =>
       entry('Chicken and rice', `2026-08-2${i + 1}`),
     );
     const oneOff = [entry('Birthday cake', TODAY)];
     const list = recentFoods([...staple, ...oneOff], { today: TODAY });
-    assert.equal(list[0].name, 'Chicken and rice');
+    assert.equal(list[0].name, 'Birthday cake');
+    assert.equal(list[1].name, 'Chicken and rice');
   });
 
   it('lets a stale food fade below a current one', () => {
@@ -59,6 +63,32 @@ describe('recentFoods', () => {
     const fresh = Array.from({ length: 3 }, () => entry('New meal', '2026-08-28'));
     const list = recentFoods([...old, ...fresh], { today: TODAY });
     assert.equal(list[0].name, 'New meal');
+  });
+
+  it('keeps the newest ten and drops the rest, without touching history', () => {
+    // The cap is a display limit applied after grouping, so the eleventh food
+    // is merely off the list — it is still in the diary, and still returned by
+    // a larger limit.
+    const many = Array.from({ length: 30 }, (_, i) =>
+      entry(`Food ${i}`, TODAY, { calories: 100 + i, createdAt: i + 1 }),
+    );
+    const list = recentFoods(many, { today: TODAY, limit: 10 });
+    assert.equal(list.length, 10);
+    assert.equal(list[0].name, 'Food 29');
+    assert.equal(list[9].name, 'Food 20');
+    assert.equal(recentFoods(many, { today: TODAY, limit: 30 }).length, 30);
+  });
+
+  it('shows one row per repeated food, so the ten are ten different foods', () => {
+    const repeats = Array.from({ length: 12 }, (_, i) =>
+      entry('Chicken and rice', TODAY, { createdAt: i + 1 }),
+    );
+    const others = Array.from({ length: 3 }, (_, i) =>
+      entry(`Other ${i}`, TODAY, { calories: 200 + i, createdAt: 100 + i }),
+    );
+    const list = recentFoods([...repeats, ...others], { today: TODAY, limit: 10 });
+    assert.equal(list.length, 4);
+    assert.equal(list.filter((f) => f.name === 'Chicken and rice').length, 1);
   });
 
   it('takes values from the most recent logging, so a correction sticks', () => {

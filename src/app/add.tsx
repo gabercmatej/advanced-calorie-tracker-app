@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BarcodeScanner } from '@/components/barcode-scanner';
+import { Breakdown } from '@/components/breakdown';
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { Field } from '@/components/field';
@@ -29,7 +30,14 @@ import { useCelebration } from '@/context/CelebrationContext';
 import { useDiary } from '@/context/DiaryContext';
 import { useTheme } from '@/hooks/use-theme';
 import { useDismiss } from '@/hooks/use-dismiss';
-import { estimateFood, type FoodEstimate, type KnownItem } from '@/lib/ai';
+import { useSavedProducts } from '@/hooks/use-saved-products';
+import { estimateFood, type KnownItem } from '@/lib/ai';
+import {
+  draftFromEstimate,
+  draftFromLibrary,
+  draftToEntry,
+  type Draft,
+} from '@/lib/food-draft';
 import {
   defaultPortion,
   findFood,
@@ -48,12 +56,15 @@ import {
   savedToQuick,
   type QuickFood,
 } from '@/lib/quick-log';
-import { MEAL_TYPES, type EntryItem, type MealType } from '@/types';
+import { EXACT_SOURCES, MEAL_TYPES, type EntryItem, type MealType } from '@/types';
 
 const MEAL_OPTIONS = MEAL_TYPES.map((m) => ({ value: m, label: m[0].toUpperCase() + m.slice(1) }));
 
 /** More angles stop helping well before this, and each one costs vision tokens. */
 const MAX_PHOTOS = 4;
+
+/** How many distinct foods the "Recent foods" list shows before it stops. */
+const RECENT_LIMIT = 10;
 
 /** A product the user scanned, with its exact per-unit label nutrition. */
 interface ScannedItem extends KnownItem {
@@ -61,57 +72,9 @@ interface ScannedItem extends KnownItem {
   code: string;
 }
 
-interface Draft {
-  name: string;
-  calories: string;
-  protein: string;
-  carbs: string;
-  fat: string;
-  /** Blank when unknown — distinct from a known 0 g. */
-  fiber: string;
-  quantity: string;
-  confidence: number;
-  /**
-   * Set when the draft came from the food library. Holds the amount in grams so
-   * the numbers can be rescaled exactly rather than multiplied by a serving.
-   */
-  basis?: { foodId: string; grams: number };
-  /** Provenance of the original estimate. Display only — edits don't rewrite it. */
-  items?: EntryItem[];
-  /** The photos were not analysed — offline keyword estimate only. */
-  estimatedOffline?: boolean;
-}
-
-/** A draft for `grams` of a library food, with every field rescaled exactly. */
-function draftFromLibrary(food: LibraryFood, grams: number): Draft {
-  const n = scaleFood(food, grams);
-  return {
-    name: food.name,
-    calories: String(n.calories),
-    protein: String(Math.round(n.protein)),
-    carbs: String(Math.round(n.carbs)),
-    fat: String(Math.round(n.fat)),
-    fiber: String(Math.round(n.fiber)),
-    quantity: '1',
-    // A reference lookup, not a guess.
-    confidence: 1,
-    basis: { foodId: food.id, grams },
-  };
-}
-
-function draftFrom(e: FoodEstimate): Draft {
-  return {
-    name: e.name,
-    calories: String(e.calories),
-    protein: String(Math.round(e.macros.protein)),
-    carbs: String(Math.round(e.macros.carbs)),
-    fat: String(Math.round(e.macros.fat)),
-    fiber: e.fiber == null ? '' : String(Math.round(e.fiber)),
-    quantity: '1',
-    confidence: e.confidence,
-    items: e.items,
-    estimatedOffline: e.estimatedOffline,
-  };
+/** How many of a meal's components carry numbers that are facts, not guesses. */
+function exactCount(items: EntryItem[] | undefined): number {
+  return items?.filter((i) => EXACT_SOURCES.includes(i.source)).length ?? 0;
 }
 
 /**
@@ -127,6 +90,10 @@ export default function AddFoodScreen() {
   const { date } = useLocalSearchParams<{ date?: string }>();
   const { addEntry, entries, entriesForDate, savedFoods, toggleSavedFood, streak } = useDiary();
   const { celebrate } = useCelebration();
+  // Products scanned in previous meals. Lets "1 scoop protein powder" resolve to
+  // the tub actually in the cupboard rather than a generic estimate.
+  const { products: savedProducts, remember: rememberProduct, persist: persistProducts } =
+    useSavedProducts();
 
   const targetDate = date ?? toDateKey();
   const isToday = targetDate === toDateKey();
@@ -144,8 +111,10 @@ export default function AddFoodScreen() {
   const [quickTab, setQuickTab] = useState<QuickTab>('recent');
   const [query, setQuery] = useState('');
 
+  // Ten, and no more. The list is a shortcut past the camera, not a history
+  // browser — the rest of the diary is still on Home and Progress.
   const recent = useMemo(
-    () => recentFoods(entries, { today: toDateKey(), limit: 12 }),
+    () => recentFoods(entries, { today: toDateKey(), limit: RECENT_LIMIT }),
     [entries],
   );
   const savedQuick = useMemo(() => savedFoods.map(savedToQuick), [savedFoods]);
@@ -194,6 +163,10 @@ export default function AddFoodScreen() {
         setScanFeedback(`No product found for ${code}`);
         return;
       }
+      // Remembered before it is even added to this meal: a successful scan is
+      // the most reliable nutrition data the app will ever hold, and it should
+      // outlive the meal it was scanned for.
+      rememberProduct(product);
       setScanned((prev) => {
         // Scanning the same product again bumps its count rather than duplicating.
         const existing = prev.find((p) => p.code === code);
@@ -205,10 +178,11 @@ export default function AddFoodScreen() {
           {
             key: `${code}-${Date.now()}`,
             code,
+            barcode: code,
             name: product.name,
-            calories: product.calories,
-            macros: product.macros,
-            fiber: product.fiber,
+            calories: product.perServing.calories,
+            macros: product.perServing.macros,
+            fiber: product.perServing.fiber,
             quantity: 1,
           },
         ];
@@ -239,15 +213,20 @@ export default function AddFoodScreen() {
       const estimate = await estimateFood({
         description,
         photos,
-        knownItems: scanned.map(({ name, calories, macros, fiber, quantity }) => ({
+        knownItems: scanned.map(({ name, calories, macros, fiber, quantity, barcode }) => ({
           name,
           calories,
           macros,
           fiber,
           quantity,
+          barcode,
         })),
+        savedProducts,
       });
-      setDraft(draftFrom(estimate));
+      // Memory records which products a meal actually used, so the ones you eat
+      // often stay ahead of the ones you scanned once.
+      if (estimate.usedProducts) persistProducts(estimate.usedProducts);
+      setDraft(draftFromEstimate(estimate));
     } catch {
       setError('Could not work out the calories. Adjust the details and try again.');
     } finally {
@@ -346,42 +325,20 @@ export default function AddFoodScreen() {
 
   function onAdd() {
     if (!draft) return;
-    const calories = Math.max(0, Math.round(Number(draft.calories) || 0));
-    const quantity = Math.max(0.25, Number(draft.quantity) || 1);
-    const uris = photos.map((p) => p.uri);
-    const fiber = draft.fiber.trim() === '' ? undefined : Math.max(0, Number(draft.fiber) || 0);
-
-    commit(
-      {
-        name: draft.name.trim() || 'Food',
-        date: targetDate,
-        meal,
-        calories,
-        macros: {
-          protein: Math.max(0, Number(draft.protein) || 0),
-          carbs: Math.max(0, Number(draft.carbs) || 0),
-          fat: Math.max(0, Number(draft.fat) || 0),
-        },
-        fiber,
-        quantity,
-        // Purely scanned meals are label-derived, not estimated. A draft loaded
-        // from a previous entry carries no items and no capture, so it lands
-        // here as false too — which is correct, it was never a fresh guess.
-        aiEstimated:
-          draft.items?.some((i) => i.source === 'estimate') ??
-          photos.length + description.trim().length > 0,
-        photoUri: uris[0],
-        photoUris: uris.length > 1 ? uris : undefined,
-        items: draft.items,
-      },
-      calories * quantity,
-    );
+    const entry = draftToEntry(draft, {
+      date: targetDate,
+      meal,
+      photoUris: photos.map((p) => p.uri),
+      captured: photos.length + description.trim().length > 0,
+    });
+    commit(entry, entry.calories * entry.quantity);
   }
 
   const setField = (key: keyof Draft) => (v: string) =>
     setDraft((d) => (d ? { ...d, [key]: v } : d));
 
-  const labelCount = draft?.items?.filter((i) => i.source === 'label').length ?? 0;
+  const labelCount = exactCount(draft?.items);
+  const unresolved = draft?.needsClarification ?? [];
   const basisFood = draft?.basis ? findFood(draft.basis.foodId) : undefined;
   const draftIsSaved = draft
     ? isSaved(savedFoods, { name: draft.name, calories: Number(draft.calories) || 0 })
@@ -594,26 +551,31 @@ export default function AddFoodScreen() {
                     </View>
                   ) : null}
 
-                  {draft.items?.length ? (
-                    <View style={[styles.breakdown, { borderColor: theme.border }]}>
-                      {draft.items.map((item, i) => (
-                        <View key={`${item.name}-${i}`} style={styles.breakdownRow}>
-                          <Ionicons
-                            name={item.source === 'label' ? 'pricetag' : 'sparkles-outline'}
-                            size={12}
-                            color={item.source === 'label' ? theme.success : theme.textSecondary}
-                          />
-                          <ThemedText type="small" style={styles.breakdownName} numberOfLines={1}>
-                            {item.name}
-                          </ThemedText>
-                          <ThemedText type="small" themeColor="textSecondary">
-                            {item.source === 'label' ? '' : '~'}
-                            {item.calories} kcal
-                          </ThemedText>
-                        </View>
-                      ))}
+                  {/* A food the user named that nothing could put a number on.
+                      Asking is the correct behaviour here — quietly dropping it
+                      or inventing a value are both worse than an honest gap. */}
+                  {unresolved.length ? (
+                    <View style={styles.errorRow}>
+                      <Ionicons name="help-circle-outline" size={15} color={theme.danger} />
+                      <ThemedText type="small" style={[styles.errorText, { color: theme.danger }]}>
+                        Couldn&apos;t work out {unresolved.join(', ')}. Add the calories below, or
+                        scan it, before saving.
+                      </ThemedText>
                     </View>
                   ) : null}
+
+                  {/* Corrections are said out loud. A repair the user never sees
+                      is indistinguishable from the bug it fixed. */}
+                  {draft.notes?.length ? (
+                    <View style={styles.errorRow}>
+                      <Ionicons name="build-outline" size={15} color={theme.textSecondary} />
+                      <ThemedText type="small" themeColor="textSecondary" style={styles.errorText}>
+                        {draft.notes.join(' ')}
+                      </ThemedText>
+                    </View>
+                  ) : null}
+
+                  {draft.items?.length ? <Breakdown items={draft.items} /> : null}
 
                   <Field label="Name" value={draft.name} onChangeText={setField('name')} />
 
@@ -907,21 +869,6 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.half,
     paddingHorizontal: Spacing.two,
     borderRadius: Radius.full,
-  },
-  breakdown: {
-    gap: Spacing.two,
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  breakdownRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-  },
-  breakdownName: {
-    flex: 1,
   },
   grid: {
     flexDirection: 'row',

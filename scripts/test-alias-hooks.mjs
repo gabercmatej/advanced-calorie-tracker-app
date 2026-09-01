@@ -9,7 +9,7 @@
  * Test-only. Nothing in the app depends on it, and it changes no behaviour —
  * it only teaches the test runner where the source files live.
  */
-import { existsSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const SRC = new URL('../src/', import.meta.url);
@@ -27,8 +27,13 @@ export async function resolve(specifier, context, nextResolve) {
 
   for (const candidate of candidates) {
     const path = fileURLToPath(candidate);
-    if (existsSync(path) && !path.endsWith('/')) {
-      return nextResolve(pathToFileURL(path).href, context);
+    // Files only. A bare `@/types` names a directory that exists, and returning
+    // it would resolve to the folder rather than falling through to its
+    // `index.ts` — which Node then rejects as an unsupported directory import.
+    try {
+      if (statSync(path).isFile()) return nextResolve(pathToFileURL(path).href, context);
+    } catch {
+      // Not there — try the next shape.
     }
   }
 

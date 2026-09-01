@@ -48,6 +48,14 @@ export const StorageKeys = {
   /** Foods the user pinned for one-tap logging (see lib/quick-log.ts). */
   savedFoods: 'calai/saved-foods',
   /**
+   * Products the user has scanned, newest first (see lib/product-memory.ts).
+   *
+   * This is what makes "1 scoop protein powder" resolve to the tub actually in
+   * the cupboard, with the label's numbers and no model call. Kept separate
+   * from `savedFoods`, which is a list of *meals* pinned for one-tap logging.
+   */
+  savedProducts: 'calai/saved-products',
+  /**
    * The last calorie target that was applied, with the date it was set. Feeds
    * the adaptive plan's rate limiter so the target walks rather than jumps.
    */

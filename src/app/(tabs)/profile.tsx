@@ -36,11 +36,7 @@ import {
 } from '@/lib/weight-input';
 import { exportBackup, pickBackup, saveFile } from '@/lib/backup';
 import { backupFilename, serializeBackup, toCsv } from '@/lib/backup-format';
-import {
-  cancelReminders,
-  requestNotificationPermission,
-  scheduleDailyReminder,
-} from '@/lib/notifications';
+import { requestNotificationPermission } from '@/lib/notifications';
 import {
   DIET_TYPES,
   GOAL_TYPES,
@@ -155,12 +151,11 @@ export default function ProfileScreen() {
         }
         return;
       }
-      setNotificationsEnabled(true);
-      await scheduleDailyReminder();
-    } else {
-      setNotificationsEnabled(false);
-      await cancelReminders();
     }
+    // Scheduling is not done here. Flipping the preference is enough: the
+    // reminder is reconciled against the diary from one place at the root, so
+    // there is no second scheduler that could disagree with it.
+    setNotificationsEnabled(value);
   }
 
   const [busy, setBusy] = useState<'export' | 'csv' | 'import' | null>(null);
@@ -296,10 +291,10 @@ export default function ProfileScreen() {
         <View style={styles.toggleRow}>
           <View style={styles.toggleText}>
             <ThemedText type="small" themeColor="textSecondary" style={styles.sectionLabel}>
-              Streak reminders
+              Daily reminder
             </ThemedText>
             <ThemedText type="small" themeColor="textSecondary">
-              A daily nudge and a cheer when you extend your streak.
+              One nudge at noon, and only on days you haven&apos;t logged anything yet.
             </ThemedText>
           </View>
           <Switch

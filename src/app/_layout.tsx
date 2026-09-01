@@ -10,14 +10,24 @@ import { CelebrationProvider } from '@/context/CelebrationContext';
 import { DiaryProvider, useDiary } from '@/context/DiaryContext';
 import { FoodProvider } from '@/context/FoodContext';
 import { ResolvedThemeProvider, useResolvedScheme } from '@/context/ThemeContext';
+import { useDailyReminder } from '@/hooks/use-daily-reminder';
 
 SplashScreen.preventAutoHideAsync();
 
 function RootNavigator() {
   const { ready: authReady, session } = useAuth();
-  const { ready: diaryReady, profile } = useDiary();
+  const { ready: diaryReady, profile, loggedDates } = useDiary();
   const scheme = useResolvedScheme();
   const ready = authReady && diaryReady;
+
+  // Mounted above the early return so it survives every navigation: the noon
+  // reminder is queued and cancelled from one place, rather than from whichever
+  // screen happens to be on top.
+  useDailyReminder({
+    ready: diaryReady,
+    enabled: profile.notificationsEnabled,
+    loggedDates,
+  });
 
   // Keep the splash screen up until persisted data has hydrated.
   useEffect(() => {

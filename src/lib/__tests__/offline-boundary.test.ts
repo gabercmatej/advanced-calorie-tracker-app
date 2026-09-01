@@ -63,7 +63,17 @@ function importClosure(entry: string): Set<string> {
 const TRANSPORT = join(LIB, 'claude.ts');
 
 describe('the offline path never reaches the model', () => {
-  for (const entry of ['quick-log.ts', 'food-library.ts', 'food-facts.ts', 'merge.ts', 'sync.ts', 'weight-input.ts']) {
+  // `estimate-pipeline.ts` is on this list deliberately. It owns the prompts,
+  // the validation and the corrective retry, and it takes its model transport as
+  // an argument rather than importing one — which is what makes every rule in it
+  // testable with no network and no key. An import of `claude.ts` appearing
+  // there would quietly undo that.
+  const ENTRIES = [
+    'quick-log.ts', 'food-library.ts', 'food-facts.ts', 'merge.ts', 'sync.ts',
+    'weight-input.ts', 'meal-parse.ts', 'product-memory.ts', 'estimate-validate.ts',
+    'library-estimate.ts', 'estimate-pipeline.ts',
+  ];
+  for (const entry of ENTRIES) {
     it(`${entry} cannot reach claude.ts`, () => {
       const closure = importClosure(join(LIB, entry));
       assert.equal(

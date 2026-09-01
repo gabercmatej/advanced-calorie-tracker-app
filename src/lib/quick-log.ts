@@ -26,6 +26,11 @@ export interface QuickFood {
   timesLogged: number;
   /** Date key of the most recent time it was logged. */
   lastLogged: string;
+  /**
+   * Timestamp of the most recent logging. Drives the ordering — `lastLogged`
+   * is only day-granular, and half a day's meals share a date key.
+   */
+  lastLoggedAt: number;
   /** The meal slot it is most often eaten in, used to preselect the picker. */
   usualMeal: MealType;
 }
@@ -82,6 +87,11 @@ function dominantMeal(entries: FoodEntry[]): MealType {
  * estimate once fixes every future re-log of it. `quantity` is deliberately
  * dropped: a QuickFood is always one serving, and the amount is chosen again
  * at log time.
+ *
+ * Ordering is by when the food was last actually eaten, newest first — the
+ * list is called "recent" and is now short enough that it has to mean it. The
+ * recency-weighted `score` survives as the tie-break for foods logged in the
+ * same instant, and as the signal the Food tab's taste profile reads.
  */
 export function recentFoods(
   entries: FoodEntry[],
@@ -115,11 +125,12 @@ export function recentFoods(
       score,
       timesLogged: group.length,
       lastLogged: sorted.reduce((max, e) => (e.date > max ? e.date : max), sorted[0].date),
+      lastLoggedAt: latest.createdAt,
       usualMeal: dominantMeal(sorted),
     });
   }
 
-  return out.sort((a, b) => b.score - a.score || (a.lastLogged < b.lastLogged ? 1 : -1)).slice(0, limit);
+  return out.sort((a, b) => b.lastLoggedAt - a.lastLoggedAt || b.score - a.score).slice(0, limit);
 }
 
 /** A saved (pinned) food, presented in the same shape as a recent one. */
@@ -133,6 +144,9 @@ export function savedToQuick(saved: SavedFood): QuickFood {
     score: Number.POSITIVE_INFINITY,
     timesLogged: 0,
     lastLogged: '',
+    // Saved foods are a list the user curates by hand, presented in their own
+    // order — they are never mixed into the recency ranking.
+    lastLoggedAt: 0,
     usualMeal: saved.usualMeal ?? 'lunch',
   };
 }

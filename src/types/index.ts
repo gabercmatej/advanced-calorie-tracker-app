@@ -54,19 +54,40 @@ export interface FoodEntry {
   fiber?: number;
 }
 
-/** Where a single component of a logged meal got its numbers. */
-export type ItemSource = 'label' | 'estimate';
+/**
+ * Where a single component of a logged meal got its numbers.
+ *
+ * The order here is the evidence hierarchy the estimator enforces: anything
+ * earlier in this list may never be overridden by anything later. `user` is a
+ * number the user typed outright, `label` came off a barcode scanned for this
+ * meal, `saved` off a barcode scanned for an earlier one, `library` is a
+ * reference-table lookup, `estimate` is the model, and `unresolved` is a food
+ * we know was eaten but could not put a number on — which is deliberately a
+ * visible state rather than a silent omission.
+ */
+export type ItemSource = 'user' | 'label' | 'saved' | 'library' | 'estimate' | 'unresolved';
+
+/** Sources whose numbers are facts rather than inferences. */
+export const EXACT_SOURCES: ItemSource[] = ['user', 'label', 'saved'];
 
 /**
- * One component of a logged meal. `label` items were read off a scanned
- * barcode and are exact; `estimate` items were inferred from a photo or the
- * description. Stored on the entry purely so the breakdown can be shown again.
+ * One component of a logged meal. Stored on the entry so the breakdown can be
+ * shown again, and so `source` records which numbers were facts and which were
+ * guesses long after the estimate itself is gone.
  */
 export interface EntryItem {
   name: string;
   calories: number;
   macros: Macros;
   source: ItemSource;
+  /** Dietary fibre for this component in grams, when known. */
+  fiber?: number;
+  /** How much of it, in `unit`s — preserved from what the user actually said. */
+  quantity?: number;
+  /** The unit `quantity` counts: 'g', 'ml', 'can', 'scoop', 'piece'… */
+  unit?: string;
+  /** Per-component certainty 0..1. Absent on components written before this existed. */
+  confidence?: number;
 }
 
 /** A single body-weight measurement, stored in kilograms. */

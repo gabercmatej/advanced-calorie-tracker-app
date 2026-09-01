@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { CalorieRing } from '@/components/calorie-ring';
@@ -53,17 +54,36 @@ export default function HomeScreen() {
 
   const today = toDateKey();
   const isToday = selectedDate === today;
-  const canGoForward = canPageForward(selectedDate, today);
 
   /**
-   * Page the strip. Only the day in focus moves — this is history viewing, and
-   * nothing about it changes where the ＋ button logs food.
+   * Which week the strip shows. Deliberately separate from `selectedDate`:
+   * paging browses, tapping selects, and browsing must not move the day whose
+   * meals are on screen.
    */
+  const [weekAnchor, setWeekAnchor] = useState(selectedDate);
+
+  /**
+   * Follow the selection when it moves from outside this screen — the Progress
+   * calendar sets it too, and the strip would otherwise be showing a different
+   * week from the day Home is describing. Adjusting state during render rather
+   * than in an effect is deliberate: it re-renders before painting, so the
+   * wrong week is never briefly visible. Paging changes only the anchor, so it
+   * does not re-trigger this.
+   */
+  const [lastSelected, setLastSelected] = useState(selectedDate);
+  if (lastSelected !== selectedDate) {
+    setLastSelected(selectedDate);
+    setWeekAnchor(selectedDate);
+  }
+
+  const canGoForward = canPageForward(weekAnchor, today);
+
+  /** Page the strip. Moves the view only — the selected day stays put. */
   function pageWeek(direction: -1 | 1) {
-    const next = shiftWeek(selectedDate, direction, today);
-    if (next === selectedDate) return;
+    const next = shiftWeek(weekAnchor, direction, today);
+    if (next === weekAnchor) return;
     haptics.selection();
-    setSelectedDate(next);
+    setWeekAnchor(next);
   }
 
   const entries = entriesForDate(selectedDate);
@@ -84,6 +104,7 @@ export default function HomeScreen() {
           point Home at it (there is no separate day screen) */}
       <Appear delay={60}>
         <WeekStrip
+          anchorDate={weekAnchor}
           selectedDate={selectedDate}
           today={today}
           canGoForward={canGoForward}

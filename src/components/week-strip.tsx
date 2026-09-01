@@ -28,7 +28,9 @@ const ENTER = { damping: 20, stiffness: 220, mass: 0.6 } as const;
 const SNAP_BACK = { damping: 18, stiffness: 260, mass: 0.6 } as const;
 
 interface Props {
-  /** The day in focus. Its week is the week on screen. */
+  /** Any day in the week to display. Moved by paging, never by tapping. */
+  anchorDate: string;
+  /** The day Home is pointed at. Highlighted only when it falls in this week. */
   selectedDate: string;
   today: string;
   onSelectDate: (key: string) => void;
@@ -43,11 +45,17 @@ interface Props {
 /**
  * Home's week strip, pageable through history.
  *
- * Swiping is history *viewing*. It moves which day Home is pointed at, exactly
- * as tapping a day in the strip already did — it does not change where new food
- * is logged. The tab bar's ＋ still opens the logger on today; the only route
- * into a past date is the day's own empty-state card, and that modal names the
- * date in its title.
+ * Paging and selection are separate. A swipe changes only which seven days are
+ * on screen; the day Home is pointed at changes when — and only when — you tap
+ * one. Paging back from a selected Tuesday used to jump the selection to the
+ * previous Tuesday, which meant browsing history silently moved the day whose
+ * meals were on screen. Now the previous week is simply shown, still with
+ * Tuesday's totals below it, until a day in it is tapped.
+ *
+ * A consequence worth knowing: while you are looking at another week, no cell
+ * is highlighted, because the selected day is not among the seven on screen.
+ * That is the honest rendering — a highlight would have to point at a day that
+ * is not the one the screen is describing.
  *
  * The direction is the carousel convention: dragging right pulls the previous
  * week in from the left, dragging left brings a newer one. Forward stops at the
@@ -60,6 +68,7 @@ interface Props {
  * opposite edge, and it springs in; below the threshold it simply snaps back.
  */
 export function WeekStrip({
+  anchorDate,
   selectedDate,
   today,
   onSelectDate,
@@ -70,7 +79,7 @@ export function WeekStrip({
   const theme = useTheme();
   const gradients = useGradients();
 
-  const week = weekOf(selectedDate);
+  const week = weekOf(anchorDate);
 
   const translateX = useSharedValue(0);
   const width = useSharedValue(0);

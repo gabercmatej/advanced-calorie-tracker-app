@@ -71,7 +71,7 @@ describe('the offline path never reaches the model', () => {
   const ENTRIES = [
     'quick-log.ts', 'food-library.ts', 'food-facts.ts', 'merge.ts', 'sync.ts',
     'weight-input.ts', 'meal-parse.ts', 'product-memory.ts', 'estimate-validate.ts',
-    'library-estimate.ts', 'estimate-pipeline.ts',
+    'library-estimate.ts', 'estimate-pipeline.ts', 'product-scale.ts', 'day-state.ts',
   ];
   for (const entry of ENTRIES) {
     it(`${entry} cannot reach claude.ts`, () => {

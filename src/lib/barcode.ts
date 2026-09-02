@@ -126,5 +126,9 @@ export async function lookupBarcode(code: string): Promise<ScannedProductInput |
     per100,
     servingGrams: perServing ? servingGrams : 100,
     liquid,
+    // Says out loud that this "serving" is only the 100 g reference. Without it
+    // "1 scoop" of a per-100 g product silently becomes 100 g — which is two
+    // scoops of most powders, and the reason this flag exists at all.
+    servingIsReference: perServing ? undefined : true,
   };
 }

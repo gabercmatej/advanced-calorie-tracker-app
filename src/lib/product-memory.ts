@@ -66,6 +66,12 @@ export interface SavedProduct {
   servingGrams?: number;
   /** True when the base unit is millilitres rather than grams. */
   liquid?: boolean;
+  /**
+   * True when `perServing` is only the per-100 g reference block rather than a
+   * portion the label stated. Countable amounts ("1 scoop") cannot be converted
+   * against it, and must be surfaced as unknown rather than assumed.
+   */
+  servingIsReference?: boolean;
   /** The generic word this product answers to, if any. */
   category?: ProductCategory;
   /** Every phrase that resolves to this product, most specific first. */
@@ -198,6 +204,7 @@ export interface ScannedProductInput {
   per100?: ProductNutrition;
   servingGrams?: number;
   liquid?: boolean;
+  servingIsReference?: boolean;
 }
 
 /**
@@ -219,6 +226,7 @@ export function rememberProduct(products: SavedProduct[], scan: ScannedProductIn
     per100: scan.per100,
     servingGrams: scan.servingGrams,
     liquid: scan.liquid,
+    servingIsReference: scan.servingIsReference,
     category,
     aliases: aliasesFor(scan.name, category),
     scannedAt: now,

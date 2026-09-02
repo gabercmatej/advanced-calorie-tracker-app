@@ -17,6 +17,7 @@ import { useDiary } from '@/context/DiaryContext';
 import { useEntryPhoto } from '@/hooks/use-entry-photo';
 import { useGradients } from '@/hooks/use-gradients';
 import { useTheme } from '@/hooks/use-theme';
+import { useToday } from '@/hooks/use-today';
 import { haptics } from '@/lib/haptics';
 import {
   fiberTarget,
@@ -24,7 +25,6 @@ import {
   progress,
   relativeDayLabel,
   remaining,
-  toDateKey,
 } from '@/lib/nutrition';
 import { canGoForward as canPageForward, shiftWeek } from '@/lib/week-nav';
 import type { FoodEntry, Macros } from '@/types';
@@ -45,6 +45,7 @@ export default function HomeScreen() {
     entriesForDate,
     totalsForDate,
     loggedDates,
+    weighedDates,
     streak,
     selectedDate,
     setSelectedDate,
@@ -52,7 +53,10 @@ export default function HomeScreen() {
     removeWeight,
   } = useDiary();
 
-  const today = toDateKey();
+  // The real local date, kept true past midnight and across a resume. Derived
+  // from the clock and never from `selectedDate`: looking at yesterday must not
+  // move which day the strip calls today.
+  const today = useToday();
   const isToday = selectedDate === today;
 
   /**
@@ -113,10 +117,8 @@ export default function HomeScreen() {
             haptics.selection();
             setSelectedDate(key);
           }}
-          isMet={(key) => {
-            const cals = totalsForDate(key).calories;
-            return loggedDates.has(key) && cals > 0 && cals <= goal.calories * 1.05;
-          }}
+          hasFood={(key) => loggedDates.has(key)}
+          hasWeight={(key) => weighedDates.has(key)}
         />
       </Appear>
 

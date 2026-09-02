@@ -14,6 +14,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useGradients } from '@/hooks/use-gradients';
 import { useTheme } from '@/hooks/use-theme';
+import { dayState } from '@/lib/day-state';
 import { fromDateKey, relativeDayLabel, weekOf } from '@/lib/nutrition';
 
 const WEEKDAY = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -38,8 +39,10 @@ interface Props {
   onShiftWeek: (direction: -1 | 1) => void;
   /** False on the current week — there is nothing newer to show. */
   canGoForward: boolean;
-  /** Whether a day should read as "goal met". Decided by the caller. */
-  isMet: (key: string) => boolean;
+  /** Whether a day has at least one food entry. Read straight off the diary. */
+  hasFood: (key: string) => boolean;
+  /** Whether a day has a weigh-in. Either one on its own counts as activity. */
+  hasWeight: (key: string) => boolean;
 }
 
 /**
@@ -52,8 +55,15 @@ interface Props {
  * meals were on screen. Now the previous week is simply shown, still with
  * Tuesday's totals below it, until a day in it is tapped.
  *
+ * Three separate facts are drawn on the same seven circles, and each gets its
+ * own channel so none can be mistaken for another: **today** is the filled
+ * emerald circle and nothing else ever is; a **past day with activity** — food
+ * or a weigh-in — is an emerald ring; the **selected** day carries a small dot
+ * beneath it. Selection deliberately does not reuse the green circle, because
+ * that is precisely how yesterday came to look like today.
+ *
  * A consequence worth knowing: while you are looking at another week, no cell
- * is highlighted, because the selected day is not among the seven on screen.
+ * is selected, because the selected day is not among the seven on screen.
  * That is the honest rendering — a highlight would have to point at a day that
  * is not the one the screen is describing.
  *
@@ -74,7 +84,8 @@ export function WeekStrip({
   onSelectDate,
   onShiftWeek,
   canGoForward,
-  isMet,
+  hasFood,
+  hasWeight,
 }: Props) {
   const theme = useTheme();
   const gradients = useGradients();
@@ -142,10 +153,13 @@ export function WeekStrip({
       <View onLayout={onLayout} style={styles.clip}>
         <Animated.View style={[styles.week, animated]}>
           {week.map((key) => {
-            const isSelected = key === selectedDate;
-            const isTodayCell = key === today;
-            const isFuture = key > today;
-            const met = isMet(key);
+            const { isToday, isSelected, hasActivity: active, isFuture } = dayState({
+              date: key,
+              today,
+              selectedDate,
+              hasFood: hasFood(key),
+              hasWeight: hasWeight(key),
+            });
             const dow = fromDateKey(key).getDay();
             return (
               <PressableScale
@@ -155,27 +169,29 @@ export function WeekStrip({
                 disabled={isFuture}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isSelected, disabled: isFuture }}
-                accessibilityLabel={relativeDayLabel(key)}
+                accessibilityLabel={`${relativeDayLabel(key)}${active ? ', logged' : ''}`}
                 onPress={() => onSelectDate(key)}>
                 <ThemedText
-                  type={isTodayCell ? 'smallBold' : 'small'}
-                  themeColor={isTodayCell ? 'tint' : 'textSecondary'}>
+                  type={isToday ? 'smallBold' : 'small'}
+                  themeColor={isToday ? 'tint' : 'textSecondary'}>
                   {WEEKDAY[dow]}
                 </ThemedText>
                 <View
                   style={[
                     styles.dayCircle,
                     {
-                      backgroundColor: met
+                      // Today is filled; a day with activity is ringed; a day
+                      // with neither is the plain hairline border.
+                      backgroundColor: 'transparent',
+                      borderColor: isToday
                         ? 'transparent'
-                        : isSelected
-                          ? theme.tintSoft
-                          : 'transparent',
-                      borderColor: isSelected ? theme.tint : met ? 'transparent' : theme.border,
-                      borderWidth: isSelected ? 2 : 1.5,
+                        : active
+                          ? theme.tint
+                          : theme.border,
+                      borderWidth: active && !isToday ? 2 : 1.5,
                     },
                   ]}>
-                  {met ? (
+                  {isToday ? (
                     <LinearGradient
                       colors={gradients.brand}
                       start={{ x: 0, y: 0 }}
@@ -184,13 +200,25 @@ export function WeekStrip({
                     />
                   ) : null}
                   <ThemedText
-                    type={isSelected || met ? 'smallBold' : 'small'}
+                    type={isToday || active ? 'smallBold' : 'small'}
                     style={{
-                      color: met ? theme.onTint : isFuture ? theme.tabIconDefault : theme.text,
+                      color: isToday
+                        ? theme.onTint
+                        : isFuture
+                          ? theme.tabIconDefault
+                          : theme.text,
                     }}>
                     {fromDateKey(key).getDate()}
                   </ThemedText>
                 </View>
+                {/* Selection, kept off the circle entirely. The space is always
+                    reserved so the strip does not change height as it moves. */}
+                <View
+                  style={[
+                    styles.selectedDot,
+                    { backgroundColor: isSelected ? theme.tint : 'transparent' },
+                  ]}
+                />
               </PressableScale>
             );
           })}
@@ -213,6 +241,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.one,
     flex: 1,
+  },
+  selectedDot: {
+    width: 5,
+    height: 5,
+    borderRadius: Radius.full,
   },
   dayCircle: {
     width: 38,

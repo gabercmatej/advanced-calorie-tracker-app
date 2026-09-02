@@ -108,6 +108,10 @@ function normalizeNumerics(text: string): string {
     .replace(/¾/g, ' 0.75 ')
     .replace(/⅓/g, ' 0.333 ')
     .replace(/⅔/g, ' 0.667 ')
+    // "half a scoop" is a fraction with an article in the middle of it, which
+    // the quantity regex cannot see past. Left alone it reads as one scoop —
+    // double what was eaten. "half-fat" is untouched: no article follows.
+    .replace(/\bhalf\s+(?:a|an)\s+/g, ' 0.5 ')
     // "1 1/2" and "1/2" — the mixed form first so it isn't split in two.
     .replace(/(\d+)\s+(\d+)\s*\/\s*(\d+)/g, (_m, w, n, d) => String(Number(w) + Number(n) / Number(d)))
     .replace(/(\d+)\s*\/\s*(\d+)(?!\s*(?:g|ml))/g, (_m, n, d) => String(Number(n) / Number(d)))

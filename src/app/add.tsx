@@ -184,6 +184,14 @@ export default function AddFoodScreen() {
             macros: product.perServing.macros,
             fiber: product.perServing.fiber,
             quantity: 1,
+            // The label's reference data travels with the scan. Without it the
+            // estimator has one serving and no way to convert "70 g" or "1
+            // scoop" into it, so a described amount would be ignored.
+            per100: product.per100,
+            servingGrams: product.servingGrams,
+            servingLabel: product.perServing.label,
+            liquid: product.liquid,
+            servingIsReference: product.servingIsReference,
           },
         ];
       });
@@ -213,14 +221,7 @@ export default function AddFoodScreen() {
       const estimate = await estimateFood({
         description,
         photos,
-        knownItems: scanned.map(({ name, calories, macros, fiber, quantity, barcode }) => ({
-          name,
-          calories,
-          macros,
-          fiber,
-          quantity,
-          barcode,
-        })),
+        knownItems: scanned.map(({ key: _key, code: _code, ...item }) => item),
         savedProducts,
       });
       // Memory records which products a meal actually used, so the ones you eat

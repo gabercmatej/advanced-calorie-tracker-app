@@ -32,19 +32,31 @@ import { estimateFromLibrary } from '@/lib/library-estimate';
 import { formatFact, matchFoodFacts } from '@/lib/food-facts';
 import {
   describeMention,
-  isCountable,
   parseMealDescription,
   statedCalories,
   type FoodMention,
 } from '@/lib/meal-parse';
 import { markProductUsed, resolveProduct, type SavedProduct } from '@/lib/product-memory';
+import {
+  scaleProduct,
+  type NutritionRef,
+  type ProductBasis,
+  type ScaledAmount,
+} from '@/lib/product-scale';
 import type { EntryItem, Macros } from '@/types';
 
 // ---------------------------------------------------------------------------
 // Public shapes
 // ---------------------------------------------------------------------------
 
-/** A product whose nutrition came from a barcode scanned for *this* meal. */
+/**
+ * A product whose nutrition came from a barcode scanned for *this* meal.
+ *
+ * `calories`/`macros` are one serving and `quantity` is how many servings the
+ * stepper is set to. The rest is the label's reference data, and it is what
+ * lets a described amount ("70 g", "1 scoop") be converted exactly instead of
+ * being ignored in favour of the reference serving.
+ */
 export interface KnownItem {
   name: string;
   calories: number;
@@ -53,6 +65,15 @@ export interface KnownItem {
   quantity: number;
   /** The barcode, when this came from a scan — lets memory record the use. */
   barcode?: string;
+  /** Per 100 g/ml from the label, when the database had it. */
+  per100?: NutritionRef;
+  /** Grams (or ml) in one serving, when the label stated it. */
+  servingGrams?: number;
+  /** What the label calls one serving: "1 scoop (30 g)", "100 g". */
+  servingLabel?: string;
+  liquid?: boolean;
+  /** True when "one serving" is only the 100 g reference block. */
+  servingIsReference?: boolean;
 }
 
 /** A prompt block. Structurally identical to the transport's own block type. */
@@ -219,77 +240,75 @@ function clamp01(n: unknown): number {
   return typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0.5;
 }
 
-function scaleNutrition(
-  base: { calories: number; macros: Macros; fiber?: number },
-  factor: number,
-): { calories: number; macros: Macros; fiber?: number } {
-  return {
-    calories: round(base.calories * factor),
-    macros: {
-      protein: round1(base.macros.protein * factor),
-      carbs: round1(base.macros.carbs * factor),
-      fat: round1(base.macros.fat * factor),
-    },
-    fiber: base.fiber == null ? undefined : round1(base.fiber * factor),
-  };
-}
-
-/** Expand a product scanned for this meal into a finished component. */
-function knownToComponent(known: KnownItem): WorkingComponent {
-  const q = Math.max(1, Math.round(known.quantity));
-  const scaled = scaleNutrition(known, q);
-  return {
-    name: q > 1 ? `${known.name} ×${q}` : known.name,
-    ...scaled,
-    source: 'label',
-    quantity: q,
-    unit: 'serving',
-    confidence: 0.97,
-  };
+/** How an amount reads on a component's name: "(70 g)", "×2", or nothing. */
+function amountLabel(quantity: number, unit: string): string {
+  if (unit === 'serving') return quantity > 1 ? ` ×${round1(quantity)}` : '';
+  return ` (${round1(quantity)} ${unit})`;
 }
 
 /**
- * Turn a remembered product into a component for the amount the user described.
+ * A known product plus a described amount, as one finished component.
  *
- * A weight uses the per-100 g figures when the label carried them, so 45 g of a
- * 30 g-scoop powder is exact rather than "one and a half scoops".
+ * The two inputs answer different questions and are kept apart on purpose: the
+ * label supplies the nutrition, the description supplies how much of it was
+ * eaten. When the amount cannot be converted the component is `unresolved` with
+ * no number rather than quietly falling back to the reference serving — a
+ * visible question is recoverable, a wrong number is not.
  */
-function savedToComponent(product: SavedProduct, mention: FoodMention): WorkingComponent {
-  const q = mention.quantity;
-  const serving = product.perServing;
-  let base: { calories: number; macros: Macros; fiber?: number } = serving;
-  let factor = 1;
-  let quantity = 1;
-  let unit = 'serving';
-  let confidence = 0.95;
+function productComponent(
+  name: string,
+  basis: ProductBasis,
+  source: 'label' | 'saved',
+  mention: FoodMention | undefined,
+  servings: number,
+): WorkingComponent {
+  const scaled: ScaledAmount = scaleProduct(basis, mention?.quantity, servings);
 
-  if (q && (q.unit === 'g' || q.unit === 'ml')) {
-    quantity = q.amount;
-    unit = q.unit;
-    if (product.per100) {
-      base = product.per100;
-      factor = q.amount / 100;
-    } else if (product.servingGrams && product.servingGrams > 0) {
-      factor = q.amount / product.servingGrams;
-    } else {
-      // A weight we cannot convert: one serving is the honest answer, said quietly.
-      confidence = 0.6;
-    }
-  } else if (q && isCountable(q.unit)) {
-    factor = q.amount;
-    quantity = q.amount;
-    unit = q.unit;
+  if (scaled.kind === 'unresolved') {
+    return {
+      name: `${name} (${round1(scaled.quantity)} ${scaled.unit})`,
+      calories: 0,
+      macros: { protein: 0, carbs: 0, fat: 0 },
+      source: 'unresolved',
+      quantity: scaled.quantity,
+      unit: scaled.unit,
+      confidence: 0,
+    };
   }
 
-  const scaled = scaleNutrition(base, factor);
-  const label = quantity !== 1 || unit !== 'serving' ? ` (${round1(quantity)} ${unit})` : '';
   return {
-    name: `${product.name}${label}`,
-    ...scaled,
-    source: 'saved',
-    quantity,
-    unit,
-    confidence,
+    name: `${name}${amountLabel(scaled.quantity, scaled.unit)}`,
+    ...scaled.nutrition,
+    source,
+    quantity: scaled.quantity,
+    unit: scaled.unit,
+    // An assumed unit is still label data, but it is not the 0.97 that a
+    // stated portion earns.
+    confidence: scaled.exact ? (source === 'label' ? 0.97 : 0.95) : 0.75,
+  };
+}
+
+/** The label reference behind a product scanned for this meal. */
+function basisOfKnown(known: KnownItem): ProductBasis {
+  return {
+    perServing: { calories: known.calories, macros: known.macros, fiber: known.fiber },
+    servingLabel: known.servingLabel,
+    per100: known.per100,
+    servingGrams: known.servingGrams,
+    liquid: known.liquid,
+    servingIsReference: known.servingIsReference,
+  };
+}
+
+/** The label reference behind a product remembered from an earlier scan. */
+function basisOfSaved(product: SavedProduct): ProductBasis {
+  return {
+    perServing: product.perServing,
+    servingLabel: product.perServing.label,
+    per100: product.per100,
+    servingGrams: product.servingGrams,
+    liquid: product.liquid,
+    servingIsReference: product.servingIsReference,
   };
 }
 
@@ -425,6 +444,8 @@ interface Resolution {
   required: FoodMention[];
   mentions: FoodMention[];
   usedBarcodes: string[];
+  /** Amounts the description changed, said out loud rather than applied quietly. */
+  notes: string[];
 }
 
 /**
@@ -433,27 +454,62 @@ interface Resolution {
  * Scanned products come first because they were scanned for this meal;
  * remembered products fill in generic phrases like "protein powder"; whatever
  * is left is what the model is actually asked about.
+ *
+ * The subtle part is what a scan does *not* settle. A barcode says what the
+ * product is and what its nutrition density is; it says nothing about how much
+ * of it went into this meal. So a mention that names a scanned product claims
+ * it — and if that mention carries an amount, the amount wins over the stepper
+ * and over the label's reference serving. Scanning oatmeal whose label reads
+ * per 100 g and then writing "70 g oatmeal" used to log 100 g, because the
+ * mention was treated as already covered and thrown away here.
  */
 export function resolveKnown(request: EstimateRequest): Resolution {
   const { mentions } = parseMealDescription(request.description);
-  const known: WorkingComponent[] = (request.knownItems ?? []).map(knownToComponent);
+  const items = request.knownItems ?? [];
+  /** Which mention, if any, states how much of each scanned product was eaten. */
+  const claims: (FoodMention | undefined)[] = items.map(() => undefined);
+  const saved: WorkingComponent[] = [];
   const usedBarcodes: string[] = [];
   const required: FoodMention[] = [];
+  const notes: string[] = [];
 
   for (const mention of mentions) {
-    // Already covered by something scanned for this meal.
-    if (known.some((k) => componentCovers(k, mention))) continue;
+    // Scanned for this meal. One mention per scan, so "2 scoops whey and a
+    // second scoop later" cannot both rewrite the same row.
+    const index = items.findIndex(
+      (item, i) => !claims[i] && componentCovers({ name: item.name }, mention),
+    );
+    if (index !== -1) {
+      claims[index] = mention;
+      continue;
+    }
+    // Already covered by a product resolved from memory earlier in this loop.
+    if (saved.some((c) => componentCovers(c, mention))) continue;
 
     const match = resolveProduct(request.savedProducts ?? [], mention.phrase);
     if (match) {
-      known.push(savedToComponent(match.product, mention));
+      saved.push(
+        productComponent(match.product.name, basisOfSaved(match.product), 'saved', mention, 1),
+      );
       usedBarcodes.push(match.product.barcode);
       continue;
     }
     required.push(mention);
   }
 
-  return { known, required, mentions, usedBarcodes };
+  const scanned = items.map((item, i) => {
+    const mention = claims[i];
+    const servings = Math.max(1, Math.round(item.quantity));
+    const component = productComponent(item.name, basisOfKnown(item), 'label', mention, servings);
+    if (mention?.quantity && servings > 1) {
+      notes.push(
+        `"${item.name}" was scanned ${servings}× but you wrote ${mention.quantity.text}; the description was used.`,
+      );
+    }
+    return component;
+  });
+
+  return { known: [...scanned, ...saved], required, mentions, usedBarcodes, notes };
 }
 
 // ---------------------------------------------------------------------------
@@ -527,7 +583,7 @@ function finish(
     confidence: computeConfidence(components, [], issues),
     items,
     needsClarification,
-    notes: issues.filter((i) => i.repaired).map((i) => i.message),
+    notes: [...resolution.notes, ...issues.filter((i) => i.repaired).map((i) => i.message)],
     estimatedOffline: estimatedOffline || undefined,
     modelCalls,
     usedProducts,
